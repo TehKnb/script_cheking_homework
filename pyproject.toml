@@ -1,0 +1,9 @@
+[project]
+name = "dz-checker"
+version = "1.0.0"
+description = "REST API для первинної перевірки навчальних робіт (.doc / .docx)"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning:starlette.*", "ignore:Using `httpx`"]

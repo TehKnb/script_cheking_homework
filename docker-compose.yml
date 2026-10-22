@@ -1,0 +1,39 @@
+# Налаштування — у файлі .env (зразок: .env.example)
+services:
+  dz-checker:
+    build:
+      context: .
+      args:
+        INSTALL_EASYOCR: "0"   # "1" — додати EasyOCR
+    image: dz-checker:latest
+    ports:
+      - "127.0.0.1:8000:8000"   # лише для локальних тестів; ззовні сервіс доступний через тунель
+    environment:
+      API_KEY: ${API_KEY:?Задайте API_KEY у файлі .env}
+      OCR_ENGINE: auto           # auto | tesseract | easyocr | none
+      WEB_CONCURRENCY: 2
+      MAX_FILE_SIZE_MB: 25
+    restart: unless-stopped
+
+  # Швидкий тунель: випадкова адреса https://<...>.trycloudflare.com, змінюється після перезапуску.
+  # Адресу видно в логах: docker compose logs cloudflared
+  cloudflared:
+    image: cloudflare/cloudflared:2024.12.2
+    profiles: ["quick"]
+    command: tunnel --no-autoupdate --url http://dz-checker:8000
+    depends_on:
+      dz-checker:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Постійний тунель на власному домені (потрібен акаунт Cloudflare і TUNNEL_TOKEN у .env)
+  cloudflared-named:
+    image: cloudflare/cloudflared:2024.12.2
+    profiles: ["named"]
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    depends_on:
+      dz-checker:
+        condition: service_healthy
+    restart: unless-stopped

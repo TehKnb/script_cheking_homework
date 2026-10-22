@@ -1,0 +1,3 @@
+# EasyOCR тягне PyTorch (~1-2 ГБ). Встановлюйте, якщо потрібен EasyOCR замість Tesseract.
+-r requirements.txt
+easyocr>=1.7
