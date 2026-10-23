@@ -72,5 +72,5 @@ def check_spelling(doc: ParsedDocument, settings: Settings, issues: IssueCollect
     if len(misspelled) >= _MIN_MISSPELLED and share >= settings.spelling_error_share:
         issues.add(
             "too_many_spelling_errors",
-            f"Слів з помилками ≈{share:.0%} ({len(misspelled)} з {len(words)}), напр.: {quote_list(misspelled, 8)}",
+            f"Слів з помилками ≈{share:.0%} ({len(misspelled)} з {len(words)}), наприклад: {quote_list(misspelled, 8)}",
         )

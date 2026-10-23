@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 from pathlib import PurePath
 
@@ -15,7 +16,7 @@ from app.checkers.content import (
     check_short_content,
 )
 from app.checkers.formatting import check_formatting
-from app.checkers.funnel import check_funnels
+from app.checkers.funnel import check_funnels, smartart_off_page
 from app.checkers.header import HeaderParseResult, check_header, check_header_consistency, parse_header
 from app.checkers.links import check_links
 from app.checkers.spelling import check_spelling
@@ -102,11 +103,19 @@ class DocumentChecker:
         dz_number = text_header.dz_number or file_header.dz_number
         is_club = text_header.is_club or file_header.is_club
 
-        # 3. Шапка: назва файлу та перший рядок
-        check_header(file_header, work_type, Area.FILE_NAME, settings, issues)
+        # 3. Шапка: назва файлу та перший рядок.
+        # Назва, обрізана на півслові шапки («Іваненко Іван – Юридичний супровід …, -»), — це та сама шапка, просто
+        # не вмістилася (так зберігають довгі назви); у прийнятих роботах на це не зважали.
+        # Коротке ім'я Windows («APPLE-~1») — справжню назву загубили дорогою (клієнт месенджера, архів), студент
+        # її не бачив, тож судимо лише за першим рядком
+        stem = _file_stem(file_name)
+        truncated_name = first is not None and (_is_short_dos_name(stem) or _is_truncated_copy(stem, first.text))
+        if not truncated_name:
+            check_header(file_header, work_type, Area.FILE_NAME, settings, issues)
         if first is not None:
             check_header(text_header, work_type, Area.STRUCTURE, settings, issues)
-            check_header_consistency(file_header, text_header, issues)
+            if not truncated_name:
+                check_header_consistency(file_header, text_header, issues)
 
         # 4. Оформлення та текст
         check_formatting(doc, text_header if first else None, settings, issues, work_type)
@@ -142,7 +151,14 @@ class DocumentChecker:
             # графіка є, але воронку не розпізнано — хай подивиться людина
             has_graphics = bool(doc.images) or doc.has_vector_drawings
             if dz_number == "2" and not funnels.has_funnel and has_graphics and not issues.has("funnel_not_visual"):
-                issues.add("funnel_unreadable", "ДЗ№2: у документі є графіка, але воронку автоматично не знайдено")
+                if pdf_pages is not None and smartart_off_page(doc, pdf_pages):
+                    issues.add(
+                        "funnel_unreadable",
+                        "ДЗ№2: воронку зроблено SmartArt, але поза Word вона зсувається за межі сторінки, "
+                        "тому прочитати її не вдалося — відкрийте документ у Word",
+                    )
+                else:
+                    issues.add("funnel_unreadable", "ДЗ№2: у документі є графіка, але воронку автоматично не знайдено")
             check_dz(doc, dz_number, funnels.has_funnel or has_graphics or issues.has("funnel_not_visual"), links, issues)
 
         # 7. Орфографія
@@ -196,6 +212,27 @@ def _file_stem(file_name: str) -> str:
     name = PurePath(normalize(file_name)).name
     path = PurePath(name)
     return path.stem if path.suffix.lower() in _KNOWN_EXTENSIONS else name
+
+
+_SHORT_DOS_NAME_RE = re.compile(r"[A-Z0-9_\-!#$%&'()@^`{}]{1,6}~\d{1,6}", re.I)
+
+
+def _is_short_dos_name(file_stem: str) -> bool:
+    """Ім'я 8.3, яке Windows підставляє замість довгої назви: «APPLE-~1», «IVANEN~2»."""
+    return bool(_SHORT_DOS_NAME_RE.fullmatch(file_stem.strip()))
+
+
+def _is_truncated_copy(file_stem: str, header: str, min_length: int = 30) -> bool:
+    """Назва файлу — початок шапки (без пакета й типу роботи), обрізаний посередині: обривається роздільником
+    («…бізнесів, -») або дуже довга. «Петренко Олена – Салон – Львів» без пакета обрізаною не вважається."""
+    cut = file_stem.rstrip().endswith(("-", "–", "—", ",")) or len(file_stem) >= 120
+    stem, full = _comparable_header(file_stem).rstrip(" -,"), _comparable_header(header)
+    return cut and len(stem) >= min_length and full.startswith(stem) and len(full) - len(stem) >= 5
+
+
+def _comparable_header(text: str) -> str:
+    text = re.sub(r"[‐-―−_]", "-", normalize(text).casefold())
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _extracted(file_header: HeaderParseResult, text_header: HeaderParseResult | None) -> ExtractedData:

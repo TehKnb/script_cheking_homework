@@ -91,7 +91,16 @@ def find_vector_funnels(pages: list[PdfPage]) -> list[tuple[int, FunnelAnalysis]
             height = max(b.height for b in chain)
             top = chain[0].y1 - height
             bottom = chain[-1].y2 + height
-            infos = [classify_token(w) for w in page.words if top <= w.cy <= bottom]
+            # Текст у блоках іншої схеми (оргструктура під воронкою) — не описи воронки. Чужа схема виходить
+            # за межі воронки по висоті; кольорові рамки описів поруч із блоками — ні
+            foreign = [
+                s for s in page.shapes if s not in chain and (s.y2 > chain[-1].y2 + 2 or s.y1 < chain[0].y1 - 2)
+            ]
+            infos = [
+                classify_token(w)
+                for w in page.words
+                if top <= w.cy <= bottom and not any(s.contains(w.cx, w.cy) for s in foreign)
+            ]
             analysis = analyze_stages(chain, infos, side_limit=SIDE_LIMIT_PT)
             analysis.overlapping_fields = _overlapping_fields(page, chain, analysis)
             found.append((page.number, analysis))

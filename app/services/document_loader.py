@@ -38,8 +38,13 @@ _DGM_NS = "{http://schemas.openxmlformats.org/drawingml/2006/diagram}"
 _A_T = "{http://schemas.openxmlformats.org/drawingml/2006/main}t"
 # Білий текст — службові нотатки, які не видно в документі
 _INVISIBLE_COLORS = {"FFFFFF"}
+# Кінець шапки: пакет або тип роботи («… – ВІП67 – ДЗ№2»)
+_HEADER_TAIL_RE = re.compile(
+    r"\bДЗ\s*№?\s*\d|гіпотез|стратегічн|\b(?:віп|vip)\+?\s*\d|\bстандарт\s*\d|\bрічн\w*\s*\d|\bкм\+",
+    re.IGNORECASE,
+)
 # Рядки, які після прийняття дописують співробітники (куратор, гарантійний платіж) — не текст студента
-_STAFF_LINE_RE = re.compile(r"^\s*(?:куратор\w*\s*:|гп|гарантійн\w*\s+плат)", re.IGNORECASE)
+_STAFF_LINE_RE = re.compile(r"^\s*(?:куратор\w*\s*:|гп\b|гарантійн\w*\s+плат)", re.IGNORECASE)
 
 
 class DocumentReadError(Exception):
@@ -175,7 +180,7 @@ def load_docx(data: bytes, max_unzipped_bytes: int) -> ParsedDocument:
     xml = document.element.xml
     has_smartart = _SMARTART_MARKER in xml
     return ParsedDocument(
-        paragraphs=lines,
+        paragraphs=_merge_header_continuation(lines),
         images=_read_images(data, document),
         shape_count=sum(xml.count(marker) for marker in _SHAPE_MARKERS),
         has_smartart=has_smartart,
@@ -187,6 +192,36 @@ def load_docx(data: bytes, max_unzipped_bytes: int) -> ParsedDocument:
         ),
         smartart_pyramids=_read_smartart_pyramids(data, names) if has_smartart else [],
     )
+
+
+def _merge_header_continuation(lines: list[ParagraphInfo]) -> list[ParagraphInfo]:
+    """Довгу шапку Word іноді розбиває на два абзаци: «Іваненко Іван – Юридичний супровід …, -» / «м Вишково,
+    Закарпаття – ВІП67 – ДЗ№2». Якщо перший рядок обривається роздільником (або в ньому немає ні пакета,
+    ні типу роботи), а наступний короткий рядок того ж розміру шрифту їх містить, — це одна шапка."""
+    filled = [line for line in lines if not line.is_empty]
+    if len(filled) < 2:
+        return lines
+    first, nxt = filled[0], filled[1]
+    dangling = first.text.rstrip().endswith(("-", "–", "—"))
+    if nxt.index - first.index > 2 or len(nxt.text) > 100 or not _HEADER_TAIL_RE.search(nxt.text):
+        return lines
+    if not dangling and _HEADER_TAIL_RE.search(first.text):
+        return lines
+    if abs(_main_size(first) - _main_size(nxt)) > 0.5:
+        return lines
+    shift = len(first.text) + 1
+    merged = ParagraphInfo(
+        index=first.index,
+        text=f"{first.text} {nxt.text}",
+        runs=first.runs + [replace(r, start=r.start + shift, end=r.end + shift) for r in nxt.runs],
+        in_table=first.in_table,
+    )
+    return [merged if line is first else line for line in lines if line is not nxt]
+
+
+def _main_size(line: ParagraphInfo) -> float:
+    sizes = sorted(r.size_pt for r in line.runs if r.text.strip())
+    return sizes[len(sizes) // 2] if sizes else 0.0
 
 
 def _read_smartart_pyramids(data: bytes, names: set[str]) -> list[list[str]]:

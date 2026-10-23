@@ -174,3 +174,24 @@ def test_underscore_file_names_are_lenient():
 )
 def test_classification(file_name, first_line, body, expected):
     assert classify_work_type(parse_header(file_name), parse_header(first_line), body) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "name", "business", "city"),
+    [
+        # дефіс без пробілів між ім'ям і бізнесом
+        ("Бойко Тетяна-дитячі клуби розвитку- м.КривийРіг - Стандарт 67- ДЗ№2", "Бойко Тетяна", "дитячі клуби розвитку", "м.КривийРіг"),
+        # подвійне прізвище не розриваємо
+        ("Олена Іванова-Петренко – Салон – Львів – ВІП67 – ДЗ №1", "Олена Іванова-Петренко", "Салон", "Львів"),
+    ],
+)
+def test_name_joined_to_business_by_hyphen(text, name, business, city):
+    parsed = parse_header(text)
+    assert (parsed.student_name.value, parsed.business.value, parsed.city.value) == (name, business, city)
+
+
+def test_name_hyphen_split_by_bold_business():
+    text = "Бойко Тетяна-Дитячі клуби – Київ – ВІП67 – ДЗ №2"
+    start = text.index("Дитячі")
+    parsed = parse_header(text, bold_positions=set(range(start, start + len("Дитячі клуби"))))
+    assert parsed.student_name.value == "Бойко Тетяна" and parsed.business.value == "Дитячі клуби"

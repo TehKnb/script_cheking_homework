@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 from app.checkers.content import find_text_funnel
 from app.config import Settings
-from app.issues import IssueCollector
+from app.issues import IssueCollector, as_list
 from app.ocr.engine import OcrEngine
 from app.services.document_loader import ParsedDocument
 from app.utils.numbers import format_number
@@ -91,7 +91,7 @@ def check_funnels(
             analyses.append((f"Воронка на стор. {page_no}", analysis))
         small = find_small_text(pdf_pages, settings.body_size_pt)
         if small:
-            issues.add("small_text", f"Дрібним шрифтом набрано {len(small)} слів, напр.: {quote_list(small, 5)}")
+            issues.add("small_text", f"Дрібним шрифтом набрано {len(small)} слів, наприклад: {quote_list(small, 5)}")
     if doc.smartart_without_drawing:
         issues.add(
             "funnel_unreadable",
@@ -154,6 +154,27 @@ def _check_smartart_pyramids(doc: ParsedDocument, issues: IssueCollector) -> Non
         if len(texts) >= 3 and len(described) >= max(2, len(texts) / 2):
             issues.add("funnel_labels_inside", f"SmartArt-піраміда: {quote_list([shorten(t, 40) for t in described], 3)}")
             return
+
+
+def smartart_off_page(doc: ParsedDocument, pdf_pages: list[PdfPage]) -> bool:
+    """SmartArt-піраміду зі значеннями не видно на сторінках рендеру: LibreOffice розкладає абзац, до якого вона
+    прив'язана, інакше, ніж Word, і піраміда зсувається за край аркуша (або не малюється взагалі).
+    Перевіряємо за значеннями з блоків піраміди: на сторінці (у межах аркуша) має бути хоча б половина з них."""
+    values = {
+        re.sub(r"\s", "", text)
+        for texts in doc.smartart_pyramids
+        for text in texts
+        if re.fullmatch(r"[\d\s.,]+", text) and any(ch.isdigit() for ch in text)
+    }
+    if len(values) < 2:
+        return False
+    visible = {
+        re.sub(r"\s", "", word.text)
+        for page in pdf_pages
+        for word in page.words
+        if 0 <= word.y1 and word.y2 <= page.height
+    }
+    return len(values & visible) < len(values) / 2
 
 
 def _raster_funnels(
@@ -258,22 +279,29 @@ def _report(
     for check in analysis.conversions:
         if check.expected is None or check.frequency:
             continue
-        pair = f"«{format_number(check.upper.value)}» → «{format_number(check.lower.value)}»"
-        expected = f"{check.expected:.1f}".rstrip("0").rstrip(".").replace(".", ",")
+        # «Охват → Показ: 217 947 ÷ 90 456 × 100% = 240,9%» — видно і кроки, і сам розрахунок
+        steps = f"{_step_name(stages, check.upper)} → {_step_name(stages, check.lower)}"
+        digits = 2 if abs(check.expected) < 10 else 1
+        expected = f"{check.expected:.{digits}f}".rstrip("0").rstrip(".").replace(".", ",")
+        formula = f"{format_number(check.lower.value)} ÷ {format_number(check.upper.value)} × 100% = {expected}%"
         if check.stated is None:
-            missing.append(f"{pair} (має бути {expected}%)")
+            missing.append(f"{title} · {steps}: немає конверсії (має бути {formula})")
         elif not is_conversion_correct(check, settings.funnel_conversion_tolerance_pp):
             stated = f"{check.stated:g}".replace(".", ",")
-            wrong.append(f"{pair}: вказано {stated}%, правильно {expected}%")
+            wrong.append(f"{title} · {steps}: {formula}, а вказано {stated}%")
     if missing and absence_reliable:
-        issues.add("missing_funnel_conversion", f"{title}: {'; '.join(missing)}")
+        issues.add("missing_funnel_conversion", as_list(missing))
     if wrong:
-        issues.add("wrong_funnel_conversion", f"{title}: {'; '.join(wrong)}")
+        issues.add("wrong_funnel_conversion", as_list(wrong))
 
     # OCR не бачить вузьких пробілів між розрядами («61 866» -> «61866»), тож формат чисел — лише для векторних
     unformatted = [n for n in analysis.unformatted_numbers if int(n) >= settings.number_format_min_value]
     if check_numbers and unformatted and vector:
         issues.add("wrong_number_format", f"{title}: {quote_list(unformatted)}")
+
+
+def _step_name(stages: list, stage) -> str:
+    return shorten(stage.label, 30) if stage.label else f"крок {stages.index(stage) + 1}"
 
 
 def _check_alignment(title: str, analysis: FunnelAnalysis, issues: IssueCollector) -> None:

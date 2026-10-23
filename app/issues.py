@@ -67,7 +67,7 @@ ISSUE_CATALOG: dict[str, IssueSpec] = {
         Area.CLASSIFICATION,
         Severity.REVISION,
         "Тип роботи в назві не відповідає змісту. Оформіть роботу або як Гіпотезу "
-        "(точка А, планована т.Б, ціна питання), або як Стратегічне питання",
+        "(точка А, планована точка Б, ціна питання), або як Стратегічне питання",
     ),
     "short_content": IssueSpec(
         Area.STRUCTURE,
@@ -89,13 +89,13 @@ ISSUE_CATALOG: dict[str, IssueSpec] = {
         Area.STRUCTURE,
         Severity.REVISION,
         "Для Гіпотез і Стратегічних питань у першому рядку після міста потрібно вказати область "
-        "та кількість населення, напр.: «м. Березівка (7 000), Одеська обл.»",
+        "та кількість населення, наприклад: «м. Березівка (7 000), Одеська обл.»",
     ),
     "missing_package": IssueSpec(
         Area.STRUCTURE, Severity.REVISION, "Відсутній або не розпізнаний пакет (Стандарт, ВІП, ВІП+, Річна)"
     ),
     "missing_flow_number": IssueSpec(
-        Area.STRUCTURE, Severity.REVISION, "Відсутній номер потоку — його пишуть разом із пакетом, напр. «ВІП67»"
+        Area.STRUCTURE, Severity.REVISION, "Відсутній номер потоку — його пишуть разом із пакетом, наприклад «ВІП67»"
     ),
     "missing_dz_number": IssueSpec(Area.STRUCTURE, Severity.REVISION, "Відсутній номер ДЗ (формат: «ДЗ №N»)"),
     "missing_work_type_marker": IssueSpec(
@@ -155,7 +155,7 @@ ISSUE_CATALOG: dict[str, IssueSpec] = {
     # --- Гіпотеза / Стратегічне питання / ДЗ ---
     "missing_point_a": IssueSpec(Area.STRUCTURE, Severity.REVISION, "Відсутня точка А"),
     "missing_point_b": IssueSpec(
-        Area.STRUCTURE, Severity.REVISION, "Відсутня планована точка Б («Планована т.Б – …$»)"
+        Area.STRUCTURE, Severity.REVISION, "Відсутня планована точка Б (наприклад: «Планована точка Б – 13 000 $»)"
     ),
     "missing_point_b_club": IssueSpec(
         Area.STRUCTURE,
@@ -173,12 +173,12 @@ ISSUE_CATALOG: dict[str, IssueSpec] = {
     "wrong_calculation": IssueSpec(
         Area.CALCULATION,
         Severity.REVISION,
-        "Помилка в розрахунках: результат не відповідає виразу. Перевірте обчислення",
+        "Помилка в розрахунках (перевірте обчислення)",
     ),
     "point_a_parts_mismatch": IssueSpec(
         Area.CALCULATION,
         Severity.REVISION,
-        "Сума частин точки А (А1 + А2 + …) не дорівнює самій точці А (А = Кл × $)",
+        "Сума частин точки А не дорівнює загальній точці А",
     ),
     "wrong_question_value_calculation": IssueSpec(
         Area.CALCULATION,
@@ -294,6 +294,16 @@ ISSUE_CATALOG: dict[str, IssueSpec] = {
 }
 
 
+def as_list(items: list[str], limit: int | None = None) -> str:
+    """Деталь-список: кожен пункт з нового рядка, з відступом і «◦», щоб у Telegram не зливався з «•»,
+    яким n8n позначає самі зауваження. IssueCollector ставить такий список після «:»."""
+    shown = items if limit is None else items[:limit]
+    lines = [f"    ◦ {item}" for item in shown]
+    if limit is not None and len(items) > limit:
+        lines.append(f"    ◦ … і ще {len(items) - limit}")
+    return "\n" + "\n".join(lines)
+
+
 class IssueCollector:
     """Накопичує issues без дублікатів і знає їхню серйозність."""
 
@@ -304,7 +314,12 @@ class IssueCollector:
 
     def add(self, code: str, detail: str | None = None, area: Area | None = None) -> None:
         spec = ISSUE_CATALOG[code]
-        description = spec.description if not detail else f"{spec.description}. {detail}"
+        if not detail:
+            description = spec.description
+        elif detail.startswith("\n"):  # список помилок — кожна з нового рядка
+            description = f"{spec.description.rstrip('.')}:{detail}"
+        else:
+            description = f"{spec.description}. {detail}"
         resolved_area = area or spec.area
         key = (code, resolved_area.value, description)
         if key in self._seen:

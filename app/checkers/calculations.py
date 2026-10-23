@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from app.issues import IssueCollector
+from app.issues import IssueCollector, as_list
 from app.services.document_loader import ParsedDocument
 from app.utils.numbers import format_number
 from app.utils.text import shorten
@@ -83,7 +83,7 @@ class Segment:
 
     @property
     def text(self) -> str:
-        return _join(self.tokens)
+        return _display(self.tokens)
 
     @property
     def first_number(self) -> Tok | None:
@@ -102,11 +102,15 @@ def check_calculations(doc: ParsedDocument, issues: IssueCollector) -> None:
             continue
         errors += find_calculation_errors(paragraph.text)
     if errors:
-        issues.add("wrong_calculation", "; ".join(errors[:4]) + (f" (і ще {len(errors) - 4})" if len(errors) > 4 else ""))
+        issues.add("wrong_calculation", _bullets(errors, 6))
 
     mismatches = find_point_a_parts_mismatches([p.text for p in doc.body_paragraphs])
     if mismatches:
-        issues.add("point_a_parts_mismatch", "; ".join(mismatches[:3]))
+        issues.add("point_a_parts_mismatch", _bullets(mismatches, 3))
+
+
+def _bullets(items: list[str], limit: int) -> str:
+    return as_list(items, limit)
 
 
 def find_calculation_errors(line: str) -> list[str]:
@@ -118,8 +122,7 @@ def find_calculation_errors(line: str) -> list[str]:
         for left, right in zip(segments, segments[1:]):
             error = _compare(left, right)
             if error:
-                errors.append(error)
-                break  # одна помилка на вираз — далі ланцюжок уже «з'їхав»
+                errors.append(error)  # у ланцюжку перевіряємо кожен крок від того, що написав студент
     return errors
 
 
@@ -349,23 +352,36 @@ def _compare(left: Segment, right: Segment) -> str | None:
 
 
 def _describe(expression: Segment, stated: Segment) -> str:
+    """«70 × 30 000 = 2 250 000 → правильно: 2 100 000». Знаки — × і ÷ (а не * і /, які Telegram-розмітка
+    сприймає як форматування), числа — з пробілами між тисячами."""
     value = expression.value.mid
-    if stated.percent_result and not expression.has_percent_scale:
+    percent = stated.percent_result
+    if percent and not expression.has_percent_scale:
         value *= 100
-    stated_text = _join([t for t in stated.tokens])
-    return f"«{shorten(expression.text, 50)} = {stated_text}» — має бути {format_number(round(value, 2))}"
+    expected = format_number(round(value, 2)).replace("-", "−", 1) + ("%" if percent else "")
+    return f"{shorten(_display(expression.tokens), 70)} = {_display(stated.tokens)} → правильно: {expected}"
 
 
-def _join(tokens: list[Tok]) -> str:
-    out = ""
-    for tok in tokens:
-        if tok.kind in ("pct", "rpar") or (out.endswith("(")):
-            out += tok.text
-        elif tok.kind == "op" and tok.text in _MINUS and (not out or out.endswith("(")):
-            out += "−"
+_DISPLAY_OPS = {**{op: "×" for op in _MUL}, **{op: "÷" for op in _DIV}, **{op: "−" for op in _MINUS}, "+": "+"}
+
+
+def _display(tokens: list[Tok]) -> str:
+    parts: list[str] = []
+    for i, tok in enumerate(tokens):
+        if tok.kind == "num":
+            text = format_number(tok.value)
+        elif tok.kind == "op":
+            text = _DISPLAY_OPS.get(tok.text, tok.text)
         else:
-            out += ("" if not out else " ") + tok.text
-    return out
+            text = tok.text
+        prev = tokens[i - 1] if i else None
+        # Унарний мінус («−18,59%», «(−208)») пишемо впритул до числа
+        after_unary = (
+            prev is not None and prev.kind == "op" and prev.text in _MINUS and (i == 1 or tokens[i - 2].kind in ("op", "lpar"))
+        )
+        glue = not parts or tok.kind in ("pct", "rpar") or (prev is not None and prev.kind == "lpar") or after_unary
+        parts.append(text if glue else " " + text)
+    return "".join(parts)
 
 
 # ---------------------------------------------------------- точка А на частини
@@ -409,16 +425,16 @@ def find_point_a_parts_mismatches(lines: list[str]) -> list[str]:
     """Групи «А1, А2, …» (по порядку, з 1) після рядка із загальною точкою А: сума частин = точка А."""
     found: list[str] = []
     total: float | None = None
-    total_line = ""
-    group: list[float] = []
+    group: list[tuple[str, float]] = []
 
     def close() -> None:
         if total is not None and len(group) >= 2:
-            parts_sum = sum(group)
+            parts_sum = sum(v for _, v in group)
             if abs(parts_sum - total) > max(PARTS_TOLERANCE * abs(total), 1):
+                names = " + ".join(name for name, _ in group)
+                values = " + ".join(format_number(round(v, 2)) for _, v in group).replace("+ -", "− ")
                 found.append(
-                    f"сума частин {format_number(round(parts_sum, 2))} ≠ точка А {format_number(total)} "
-                    f"(«{shorten(total_line, 40)}»)"
+                    f"{names} = {values} = {format_number(round(parts_sum, 2))}, а точка А = {format_number(total)}"
                 )
 
     for line in lines:
@@ -432,13 +448,13 @@ def find_point_a_parts_mismatches(lines: list[str]) -> list[str]:
             if value is None or idx != len(group) + 1:
                 group = []
                 continue
-            group.append(value)
+            group.append((f"А{part.group('idx')}", value))
             continue
         if _TOTAL_RE.match(line):
             value = _final_value(line)
             if value is not None:
                 close()
                 group = []
-                total, total_line = value, line.strip()
+                total = value
     close()
     return found

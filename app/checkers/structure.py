@@ -30,6 +30,8 @@ _PLANNED_B_RE = re.compile(
     _LEAD + r"(?:план\w*|заплан\w*)\s+(?:точк\w*\s*[«\"']?[бв]|т\.?\s*[бв])(?![^\W\d_])"
 )
 _PRICE_RE = re.compile(_LEAD + r"(?:ціна|цена)\s+(?:питання|вопроса)")
+_PROGRAM_RE = re.compile(r"після|базов|тижн|програм")
+_BEFORE_CLUB_RE = re.compile(r"до\s+клуб")
 _GROWTH_RE = re.compile(r"за\s+рахунок|завдяки\s+чому|за\s+счет")
 _HYPOTHESIS_TEXT_RE = re.compile(r"гіпотез|гипотез")
 _QUESTIONS_RE = re.compile(r"(?<!ціна\s)(?<!цена\s)(?:питанн|запитанн|вопрос)|\?")
@@ -116,14 +118,18 @@ def extract_metrics(lines: list[ParagraphInfo]) -> Metrics:
         elif (match := _PLANNED_B_RE.match(probe)) or ((match := _POINT_B_RE.match(probe)) and "план" in probe[:40]):
             kind = "planned_b"
         elif match := _POINT_B_RE.match(probe):
-            if "клуб" in probe:
-                kind = "point_b_club"
-            elif re.search(r"після|базов", probe):
+            if _BEFORE_CLUB_RE.search(probe) or _PROGRAM_RE.search(probe):
                 kind = "point_b_program"
+            elif "клуб" in probe:
+                kind = "point_b_club"
             else:
                 kind = "point_b"
         elif match := _POINT_A_RE.match(probe):
-            kind = "point_a_club" if "клуб" in probe else "point_a"
+            # «т А до клубу» — результат базової програми, тобто та сама т.Б після програми
+            if _BEFORE_CLUB_RE.search(probe):
+                kind = "point_b_program"
+            else:
+                kind = "point_a_club" if "клуб" in probe else "point_a"
         if kind is None or match is None:
             value = _money_value(text) if open_heading and len(text) <= 60 and has_currency(text) else None
             if value is not None:
@@ -167,7 +173,7 @@ def _check_question_value(metrics: Metrics, settings: Settings, issues: IssueCol
     if not planned or not price or not current:
         missing = [
             title
-            for title, items in (("Точка А / т.Б клубу", current), ("Планована т.Б", planned), ("Ціна питання", price))
+            for title, items in (("Точка А / точка Б клубу", current), ("Планована точка Б", planned), ("Ціна питання", price))
             if not items
         ]
         if len(missing) < 3 and metrics.of("price"):
@@ -193,8 +199,13 @@ def _check_question_value(metrics: Metrics, settings: Settings, issues: IssueCol
 
 
 def _check_club_metrics(metrics: Metrics, issues: IssueCollector) -> None:
-    if not metrics.of("point_b_club", "point_a_club", "point_b_program"):
-        issues.add("missing_point_b_club")
+    missing = []
+    if not metrics.of("point_b_program"):
+        missing.append("точку Б після базової програми")
+    if not metrics.of("point_b_club", "point_a_club"):
+        missing.append("точку Б (клуб)")
+    if missing:
+        issues.add("missing_point_b_club", "Не вказано " + " і ".join(missing))
     if not metrics.growth_reason:
         issues.add("missing_growth_reason")
 
@@ -251,10 +262,17 @@ def check_strategic_question(
 
 def check_dz(doc: ParsedDocument, dz_number: str | None, has_funnel: bool, links: list[str], issues: IssueCollector) -> None:
     if dz_number == "2":
-        if not _dz_point_a_described(doc.body_paragraphs):
-            issues.add("missing_point_a", "У ДЗ№2 потрібно описати точку А з сумою в $ (А = Кл × $)")
+        status = _dz_point_a_status(doc.body_paragraphs)
+        if status == "missing":
+            issues.add(
+                "missing_point_a",
+                "У ДЗ№2 потрібно описати точку А: кількість клієнтів × середній чек = сума в доларах ($)",
+            )
+        elif status == "no_currency":
+            # Точка А є (її навіть розписано формулою), але без валюти — не пишемо, що її «немає»
+            issues.add("missing_currency", "Точку А вказано без валюти — потрібна сума в доларах ($)")
         if not has_funnel:
-            issues.add("missing_funnel", "У ДЗ№2 воронку (п. 2 і п. 6) потрібно оформити пірамідою SmartArt або зображенням")
+            issues.add("missing_funnel", "У ДЗ№2 воронку (пункти 2 і 6) потрібно оформити пірамідою SmartArt або зображенням")
     elif dz_number == "7" and not links:
         issues.add("missing_landing_link")
     if not links:
@@ -270,18 +288,27 @@ _DRIVE_MENTION_RE = re.compile(r"(?:google|гугл)[\s-]*(?:диск\w*|drive)"
 _POINT_A_ANYWHERE_RE = re.compile(r"точк\w*\s*[«\"']?а(?![^\W\d_])|т\.\s*а(?![^\W\d_])")
 
 
-def _dz_point_a_described(lines: list[ParagraphInfo]) -> bool:
-    """У ДЗ№2 точку А розписують по-різному (у тексті завдання, таблицею, формулою «8 000$ = 114 × 70$»):
-    достатньо, щоб біля згадки точки А була сума."""
+# «А = 70*30000 = …», «2) A = 22 × 54 943 = …» — точка А, записана формулою
+_POINT_A_FORMULA_RE = re.compile(r"^\s*(?:\d+[.)]\s*)?[аa]\s*=\s*[\d(]")
+
+
+def _dz_point_a_status(lines: list[ParagraphInfo]) -> str:
+    """ok | no_currency | missing. У ДЗ№2 точку А розписують по-різному (у тексті завдання, таблицею,
+    формулою «8 000$ = 114 × 70$»): достатньо, щоб біля згадки точки А була сума в доларах.
+    Якщо точку А вказано числом без валюти — це «немає валюти», а не «немає точки А»."""
     texts = [normalize(p.text) for p in lines]
+    without_currency = False
     for idx, text in enumerate(texts):
-        m = _POINT_A_ANYWHERE_RE.search(_probe(text))
+        probe = _probe(text)
+        m = _POINT_A_ANYWHERE_RE.search(probe) or _POINT_A_FORMULA_RE.match(probe)
         if not m:
             continue
         window = [text[m.end() :], *texts[idx + 1 : idx + 4]]
         if any(_money_value(t) is not None and has_currency(t) for t in window):
-            return True
-    return False
+            return "ok"
+        if _money_value(text[m.end() :]) is not None or _POINT_A_FORMULA_RE.match(probe):
+            without_currency = True
+    return "no_currency" if without_currency else "missing"
 
 
 def _text_without_metrics(body: list[ParagraphInfo], metrics: Metrics) -> str:

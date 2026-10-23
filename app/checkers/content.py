@@ -82,7 +82,7 @@ def check_punctuation_spacing(doc: ParsedDocument, issues: IssueCollector) -> No
     if len(samples) >= _MISSING_SPACE_THRESHOLD:
         issues.add(
             "missing_space_after_punctuation",
-            f"Знайдено {len(samples)} випадків, напр.: {quote_list(samples, 3)}",
+            f"Знайдено {len(samples)} випадків, наприклад: {quote_list(samples, 3)}",
         )
 
 

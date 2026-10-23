@@ -276,6 +276,12 @@ def parse_header(
         shift = len(remainder) - len(remainder.lstrip())
         segments[0] = Segment(remainder.strip(), seg0.start + lead.end() + shift, seg0.end)
 
+    # «Іваненко Олена-дитячі клуби розвитку- м.Кривий Ріг – …»: ім'я і бізнес злиті дефісом без пробілів
+    split = _split_name_hyphen(segments[0], bold_positions)
+    if split:
+        segments[0:1] = split
+        result.segments_count = len(segments)
+
     for word, pattern in _PLACEHOLDER_PATTERNS.items():
         if any(pattern.search(s.raw) for s in segments[1:]):
             result.placeholders.append(word)
@@ -332,6 +338,25 @@ def parse_header(
         rest = [None, *rest]  # ім'я відсутнє — зсуваємо
     _assign_main_fields(result, text, rest, bold_positions)
     return result
+
+
+_NAME_HYPHEN_RE = re.compile(r"^([A-ZА-ЯІЇЄҐ][a-zа-яіїєґ'’ʼ]+\s+[A-ZА-ЯІЇЄҐ][a-zа-яіїєґ'’ʼ]+)-(?=\S)")
+
+
+def _split_name_hyphen(seg: Segment, bold_positions: set[int] | None) -> list[Segment] | None:
+    """«Прізвище Ім'я-бізнес»: дефіс одразу після імені — роздільник, якщо далі починається жирна назва
+    бізнесу або слово з малої літери. «Олена Іванова-Петренко» (подвійне прізвище) не розриваємо."""
+    m = _NAME_HYPHEN_RE.match(seg.raw)
+    if not m:
+        return None
+    rest_start = m.end()
+    following = seg.raw[rest_start]
+    starts_bold = bool(bold_positions) and (seg.start + rest_start) in bold_positions
+    if not (starts_bold or following.islower()):
+        return None
+    name = Segment(m.group(1), seg.start, seg.start + len(m.group(1)))
+    rest = seg.raw[rest_start:].strip()
+    return [name, Segment(rest, seg.end - len(rest), seg.end)] if rest else None
 
 
 def _bold_share(seg: Segment, bold_positions: set[int]) -> float:

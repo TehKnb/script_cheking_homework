@@ -1,5 +1,7 @@
 """Наскрізні сценарії перевірки документа."""
 
+import re
+
 from app.models import Routing, Status, WorkType
 from app.services import converter
 from app.services.converter import ConverterUnavailableError, OLE_MAGIC
@@ -10,6 +12,7 @@ from tests.builders import (
     DocSpec,
     FakeOcr,
     Part,
+    RED,
     blank_image,
     build_docx,
     funnel_image,
@@ -163,6 +166,24 @@ def test_club_hypothesis_requires_club_metrics(run_check):
     assert {"missing_point_b_club", "missing_growth_reason"} <= codes(run_check(spec, CLUB_HYPOTHESIS_FILE))
 
 
+def test_club_requires_both_points_b(run_check):
+    def issues_without(line: str) -> list[str]:
+        spec = DocSpec(header_parts(package="Річна63", marker="Гіпотеза"), [b for b in CLUB_BODY if line not in b[0].text])
+        return [i.description for i in run_check(spec, CLUB_HYPOTHESIS_FILE).issues if i.code == "missing_point_b_club"]
+
+    assert issues_without("після базової") and "після базової програми" in issues_without("після базової")[0]
+    assert issues_without("клуб, липень") and "точку Б (клуб)" in issues_without("клуб, липень")[0]
+
+
+def test_club_point_before_club_counts_as_program_point():
+    from app.checkers.structure import extract_metrics
+    from app.services.document_loader import ParagraphInfo
+
+    lines = ["т А до клубу 2 400 $", "Точка Б (7 тижнів) - 3500$", "т А в клубі: 12 000$"]
+    kinds = [m.kind for m in extract_metrics([ParagraphInfo(i, text, []) for i, text in enumerate(lines)]).lines]
+    assert kinds == ["point_b_program", "point_b_program", "point_a_club"]
+
+
 def test_hypothesis_wrong_calculation(run_check):
     body = list(HYPOTHESIS_BODY)
     body[2] = [Part("Ціна питання – 30 000 $")]
@@ -295,7 +316,7 @@ def test_funnel_errors(run_check):
     result = run_check(DocSpec(header_parts(), images=[funnel_image()]), DZ_FILE + "x", ocr=ocr)
     assert codes(result) == {"wrong_funnel_conversion", "missing_funnel_conversion", "missing_funnel_stage_label"}
     wrong = next(i for i in result.issues if i.code == "wrong_funnel_conversion")
-    assert "вказано 25%, правильно 20%" in wrong.description
+    assert "Охоплення → крок 2: 2 000 ÷ 10 000 × 100% = 20%, а вказано 25%" in wrong.description
 
 
 def test_images_without_ocr_go_to_manual_review(run_check):
@@ -345,3 +366,60 @@ def test_internal_error_is_contained(monkeypatch):
     result = DocumentChecker(make_settings()).check(build_docx(DocSpec(header_parts())), DZ_FILE + "x")
     assert codes(result) == {"processing_error"}
     assert result.status == Status.MANUAL_REVIEW
+
+
+# --------------------------------------------- шапка у двох абзацах, обрізана назва
+
+
+def _two_paragraph_header() -> DocSpec:
+    # Word розбив довгу шапку на два абзаци; другий — того ж розміру (14 pt)
+    first = [Part("Іваненко Іван – "), Part("Юридичний супровід угод та підбір нерухомості", bold=True), Part(", -")]
+    second = [Part("м Вишково, Закарпаття – ", size=14), Part("ВІП67", bold=True, color=RED, size=14), Part(" – ДЗ №3", size=14)]
+    return DocSpec(first, [second, *plain("Текст роботи.")])
+
+
+def test_header_continued_on_next_paragraph(run_check):
+    file_name = "Іваненко Іван – Юридичний супровід угод та підбір нерухомості, м Вишково, Закарпаття – ВІП67 – ДЗ №3.doc"
+    result = run_check(_two_paragraph_header(), file_name)
+    assert result.work_type == WorkType.DZ
+    assert result.extracted_data.package == "ВІП" and result.extracted_data.flow_number == "67"
+    assert not codes(result) & {"missing_package", "missing_work_type_marker", "wrong_body_text_size", "unclear_work_type"}
+
+
+def test_file_name_cut_mid_header_is_not_an_error(run_check):
+    cut = "Іваненко Іван – Юридичний супровід угод та підбір нерухомості, -.doc"
+    assert codes(run_check(_two_paragraph_header(), cut)) == set()
+
+
+def test_windows_short_file_name_is_not_an_error(run_check):
+    # довгу назву замінено 8.3-ім'ям дорогою до сервісу — перевіряємо лише перший рядок
+    for short in ("APPLE-~1.docx", "APPLE-~1", "IVANEN~2.DOC"):
+        assert codes(run_check(DocSpec(header_parts()), short)) == set()
+
+
+def test_file_name_without_package_is_still_an_error(run_check):
+    result = run_check(DocSpec(header_parts()), "Іваненко Іван – Кав'ярня – Київ.doc")
+    assert {"missing_package", "missing_work_type_marker"} <= codes(result)
+
+
+def test_staff_lines_are_not_student_text():
+    from app.services.document_loader import load_docx
+
+    doc = load_docx(build_docx(DocSpec(header_parts(), plain("Текст роботи.", "ГП 200$", "Куратор: Марія"))), 50 << 20)
+    assert [p.text for p in doc.body_paragraphs] == ["Текст роботи."]
+
+
+def test_dz2_point_a_without_currency_is_not_missing(run_check):
+    # Точку А розписано формулою, але без $ — це «немає валюти», а не «немає точки А»
+    body = plain("А = 70 × 30 000 = 2 100 000")
+    result = run_check(DocSpec(header_parts(marker="ДЗ №2"), body), DZ2_FILE)
+    assert "missing_currency" in codes(result) and "missing_point_a" not in codes(result)
+    ok = run_check(DocSpec(header_parts(marker="ДЗ №2"), plain("Точка А: 120 клієнтів × 50 $ = 6 000 $")), DZ2_FILE)
+    assert not codes(ok) & {"missing_currency", "missing_point_a"}
+
+
+def test_issue_messages_have_no_abbreviated_formulas():
+    from app.issues import ISSUE_CATALOG
+
+    for code, spec in ISSUE_CATALOG.items():
+        assert not re.search(r"\bт\.\s?[АБ]\b|Кл\s*×|\bнапр\.", spec.description), code

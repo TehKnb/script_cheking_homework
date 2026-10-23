@@ -129,6 +129,20 @@ def test_label_below_funnel_tip_has_no_block():
     assert [s.label for s in analysis.stages] == ["Крок 1", "Крок 2", "Крок 3"]
 
 
+def test_text_of_another_diagram_below_tip_is_not_a_label():
+    from app.visual.pdf import PdfPage, find_vector_funnels
+
+    blocks = [Box(100 + 15 * i, 100 + 30 * i, 300 - 15 * i, 130 + 30 * i) for i in range(3)]
+    words = [Token(v, b.cx - 15, b.cy - 6, b.cx + 15, b.cy + 6) for v, b in zip(("1000", "500", "100"), blocks)]
+    words += [Token(f"Крок{i}", b.x2 + 10, b.cy - 6, b.x2 + 50, b.cy + 6) for i, b in enumerate(blocks, 1)]
+    # Оргструктура, яку LibreOffice намалював упритул під вершиною: блок «Старший майстер» правіше воронки
+    org = Box(320, 185, 400, 215)
+    words.append(Token("Старший", 330, 194, 375, 206))
+    analysis = find_vector_funnels([PdfPage(1, 595, 842, [*blocks, org], words)])[0][1]
+    assert analysis.extra_labels == []
+    assert [s.label for s in analysis.stages] == ["Крок1", "Крок2", "Крок3"]
+
+
 # ------------------------------------------------- матеріали «на Google Диску»
 
 
@@ -210,3 +224,16 @@ def test_text_field_overlapping_funnel_block():
     assert overlaps([Box(65, 120, 98, 140), Box(80, 150, 118, 170)]) == []
     # Рамка «20%» розтягнута на блок і закриває його
     assert overlaps([Box(65, 120, 98, 140), Box(80, 150, 140, 170)]) == ["20%"]
+
+
+def test_smartart_funnel_off_page():
+    from app.checkers.funnel import smartart_off_page
+    from app.visual.pdf import PdfPage
+
+    doc = ParsedDocument(paragraphs=[], has_smartart=True, smartart_pyramids=[["6728", "3370", "1230", "56"]])
+    on_page = [Token(v, 250, 300 + 30 * i, 290, 312 + 30 * i) for i, v in enumerate(("6728", "3370", "1230", "56"))]
+    assert not smartart_off_page(doc, [PdfPage(1, 595, 842, [], on_page)])
+    # Піраміда зсунулась униз: перший блок ще на аркуші, решта — за його краєм
+    shifted = [Token(v, 250, 804 + 30 * i, 290, 816 + 30 * i) for i, v in enumerate(("6728", "3370", "1230", "56"))]
+    assert smartart_off_page(doc, [PdfPage(1, 595, 842, [], shifted)])
+    assert smartart_off_page(doc, [PdfPage(1, 595, 842, [], [])])  # не намалювалась зовсім
