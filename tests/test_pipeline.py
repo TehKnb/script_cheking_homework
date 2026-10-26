@@ -207,6 +207,28 @@ def test_hypothesis_missing_blocks_and_currency(run_check):
     assert {"missing_point_b", "missing_question_value", "missing_currency"} <= codes(result)
 
 
+def test_missing_template_blocks_go_to_manual_review(run_check):
+    body = [[Part("Моя точка А (потік) – 3 000 $")]] + HYPOTHESIS_BODY[3:]
+    result = run_check(DocSpec(header_parts(marker="Гіпотеза"), body), HYPOTHESIS_FILE)
+    assert {"missing_point_b", "missing_question_value"} <= codes(result)
+    assert result.status == Status.MANUAL_REVIEW and result.routing == Routing.MANUAL_REVIEW
+
+
+def test_hypothesis_without_type_in_header_and_file_name(run_check):
+    spec = DocSpec(header_parts(marker="Гіпотеза")[:-1], HYPOTHESIS_BODY)
+    result = run_check(spec, "Іваненко Іван – Кав'ярня – Київ – ВІП67.docx")
+    assert result.work_type == WorkType.HYPOTHESIS
+    assert result.issues == []
+
+
+def test_new_packages_in_black_without_flow(run_check):
+    # Платинум КМ — річний доступ (як КМ+), тож потрібні клубні показники
+    for package, body in (("ПРОРИВ", HYPOTHESIS_BODY), ("Платинум КМ", CLUB_BODY), ("Економ", HYPOTHESIS_BODY)):
+        spec = DocSpec(header_parts(package=package, marker="Гіпотеза", package_color=None), body)
+        result = run_check(spec, f"Іваненко Іван – Кав'ярня – Київ – {package} – Гіпотеза.docx")
+        assert result.issues == [], package
+
+
 def test_hypothesis_latin_lookalike_labels(run_check):
     body = list(HYPOTHESIS_BODY)
     body[0] = [Part("Моя точка A (latin) – 3 000 $")]

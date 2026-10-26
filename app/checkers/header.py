@@ -5,6 +5,8 @@
     Гіпотеза:             Прізвище Ім'я – Бізнес – Місто (населення) – Пакет+потік – Гіпотеза
     Стратегічне питання:  Прізвище Ім'я – Бізнес – Місто (населення) – Пакет+потік – Стратегічне питання
 Пакет пишеться разом із номером потоку: «ВІП67», «ВІП 67+», «ВІП+ 66», «Стандарт67», «Річна63», «КМ+ 49».
+Номер потоку обов'язковий лише для Річної; Економ, Стандарт, ВІП, ВІП+ можна писати без нього.
+Позначення типу обов'язкове лише для ДЗ: Гіпотезу й Стратегічне питання розпізнаємо і за змістом.
 Для гіпотез і стратегічних питань з невеликих міст вказується населення: «м. Березівка (7 000), Одеська обл.».
 """
 
@@ -40,9 +42,10 @@ _DZ_ANYWHERE_RE = re.compile(r"(?<![^\W\d_])(?:ДЗ|DZ|Д/З)(?![^\W\d_])|дом
 
 @dataclass(frozen=True)
 class PackageInfo:
-    canonical: str  # Стандарт | ВІП | ВІП+ | Річна | КМ+
+    canonical: str  # Економ | Стандарт | ВІП | ВІП+ | Річна | КМ+ | Платинум КМ | ПРОРИВ
     flow: str | None
-    club: bool  # річний доступ / клуб: ВІП+, Річна, КМ+, будь-який пакет з «+»
+    club: bool  # річний доступ / клуб: ВІП+, Річна, КМ+, Платинум КМ, будь-який пакет з «+»
+    annual: bool = False  # «Річна…» / «Годова…» — номер потоку обов'язковий
 
     @property
     def display(self) -> str:
@@ -57,10 +60,15 @@ PACKAGE_COLORS: dict[str, frozenset[str] | None] = {
     "ВІП+": frozenset({"red"}),
     "Річна": frozenset({"black", "red"}),
     "КМ+": None,
+    # Колір не перевіряється: можуть бути й чорними, з номером потоку чи без
+    "Економ": None,
+    "Платинум КМ": None,
+    "ПРОРИВ": None,
 }
 
 _PACKAGE_RE = re.compile(
-    r"^(?P<name>віп|vip|вип|вiп|стандарт|standard|standart|річн[^\W\d_]*|рiчн[^\W\d_]*|годов[^\W\d_]*|км)"
+    r"^(?P<name>віп|vip|вип|вiп|стандарт|standard|standart|річн[^\W\d_]*|рiчн[^\W\d_]*|годов[^\W\d_]*"
+    r"|економ|эконом|econom|прорив|прорыв|платинум\s*км|platinum\s*км|км)"
     r"(?P<vip>\s*(?:віп|vip))?"
     r"\s*(?P<plus1>\+)?\s*[-–]?\s*(?P<flow>\d{1,3})?\s*(?P<plus2>\+)?$",
     re.IGNORECASE,
@@ -82,10 +90,18 @@ def parse_package(text: str) -> PackageInfo | None:
         canonical = "Стандарт"
     elif name == "км":
         canonical = "КМ+"
+    elif name.startswith(("економ", "эконом", "econom")):
+        canonical = "Економ"
+    elif name.startswith(("прорив", "прорыв")):
+        canonical = "ПРОРИВ"
+    elif name.startswith(("платинум", "platinum")):
+        canonical = "Платинум КМ"
     else:
         canonical = "Річна"
     flow = m.group("flow")
-    return PackageInfo(canonical=canonical, flow=flow, club=plus or canonical in ("ВІП+", "Річна", "КМ+"))
+    annual = name.startswith(("річн", "рiчн", "годов"))
+    club = plus or annual or canonical in ("ВІП+", "Річна", "КМ+", "Платинум КМ")
+    return PackageInfo(canonical=canonical, flow=flow, club=club, annual=annual)
 
 
 # --------------------------------------------------------------- placeholders
@@ -489,11 +505,14 @@ def check_header(
         issues.add("missing_city", f"Не знайдено {where}", area)
     if parsed.package is None:
         issues.add("missing_package", f"Не знайдено {where}", area)
-    if settings.require_flow_number and parsed.package is not None and parsed.flow_number is None:
-        issues.add("missing_flow_number", f"{where.capitalize()} пакет вказано без номера потоку", area)
+    annual = parsed.package_info is not None and parsed.package_info.annual
+    if settings.require_flow_number and annual and parsed.flow_number is None:
+        issues.add("missing_flow_number", f"{where.capitalize()} Річну вказано без номера потоку", area)
 
     if parsed.marker is None:
-        issues.add("missing_work_type_marker", f"Не знайдено {where}", area)
+        # Гіпотезу й Стратегічне питання можна не позначати в шапці — тип визначено за змістом
+        if work_type not in (WorkType.HYPOTHESIS, WorkType.STRATEGIC_QUESTION):
+            issues.add("missing_work_type_marker", f"Не знайдено {where}", area)
     elif work_type == WorkType.DZ and parsed.marker_type == WorkType.DZ and not parsed.dz_number:
         issues.add("missing_dz_number", f"{where.capitalize()} вказано «{parsed.marker.value}»", area)
 

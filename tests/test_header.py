@@ -138,7 +138,8 @@ def test_marker_at_the_beginning():
         ("Кав'ярня – Київ – ВІП67 – ДЗ №3", {"missing_student_name"}),
         ("Іваненко Іван – Кав'ярня – ВІП67 – ДЗ №3", {"missing_city"}),
         ("Іваненко Іван – Кав'ярня – Київ – ДЗ №3", {"missing_package"}),
-        ("Іваненко Іван – Кав'ярня – Київ – ВІП – ДЗ №3", {"missing_flow_number"}),
+        ("Іваненко Іван – Кав'ярня – Київ – Річна – ДЗ №3", {"missing_flow_number"}),
+        ("Іваненко Іван – Кав'ярня – Київ – Річна ВІП – ДЗ №3", {"missing_flow_number"}),
         ("Іваненко Іван – Кав'ярня – Київ – ВІП67 – ДЗ", {"missing_dz_number"}),
         ("Іваненко Іван – Кав'ярня – Місто – ВІП67 – ДЗ №3", {"missing_city", "forbidden_placeholder_word"}),
         ("ДЗ 2", {"wrong_header_format"}),
@@ -149,7 +150,31 @@ def test_missing_fields(text, expected):
 
 
 def test_flow_number_can_be_optional():
-    assert "missing_flow_number" not in _codes("Іваненко Іван – Кафе – Київ – ВІП – ДЗ №3", require_flow_number=False)
+    assert "missing_flow_number" not in _codes("Іваненко Іван – Кафе – Київ – Річна – ДЗ №3", require_flow_number=False)
+
+
+@pytest.mark.parametrize("package", ["Економ", "Стандарт", "ВІП", "ВІП+", "КМ+", "ПРОРИВ", "Прорив 12", "Платинум КМ"])
+def test_flow_number_required_only_for_annual(package):
+    assert _codes(f"Іваненко Іван – Кафе – Київ – {package} – ДЗ №3") == set()
+
+
+@pytest.mark.parametrize(
+    ("package", "canonical", "club"),
+    [("Економ67", "Економ", False), ("ПРОРИВ", "ПРОРИВ", False), ("Платинум КМ 49", "Платинум КМ", True)],
+)
+def test_new_packages(package, canonical, club):
+    parsed = parse_header(f"Іваненко Іван – Кафе – Київ – {package} – Гіпотеза")
+    assert parsed.package_info.canonical == canonical and parsed.is_club == club
+
+
+def test_work_type_marker_optional_for_hypothesis_and_question():
+    for work_type in (WorkType.HYPOTHESIS, WorkType.STRATEGIC_QUESTION):
+        issues = IssueCollector()
+        check_header(parse_header("Іваненко Іван – Кафе – Київ – ВІП67"), work_type, Area.STRUCTURE, make_settings(), issues)
+        assert issues.issues == []
+    issues = IssueCollector()
+    check_header(parse_header("Іваненко Іван – Кафе – Київ – ВІП67"), WorkType.DZ, Area.STRUCTURE, make_settings(), issues)
+    assert [i.code for i in issues.issues] == ["missing_work_type_marker"]
 
 
 def test_underscore_file_names_are_lenient():

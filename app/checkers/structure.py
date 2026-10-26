@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 
 from app.checkers.content import has_currency, has_non_usd
 from app.config import Settings
-from app.issues import IssueCollector
+from app.issues import IssueCollector, Severity
 from app.services.document_loader import ParagraphInfo, ParsedDocument
 from app.utils.numbers import NumberMatch, find_numbers, format_number
 from app.utils.text import fold_lookalikes, normalize, quote_list
@@ -198,6 +198,11 @@ def _check_question_value(metrics: Metrics, settings: Settings, issues: IssueCol
     )
 
 
+def _missing(issues: IssueCollector, code: str, detail: str | None = None) -> None:
+    """Блоку шаблону Гіпотези / Стратегічного питання немає — роботу дивиться людина, а не повертаємо студенту."""
+    issues.add(code, detail, severity=Severity.MANUAL)
+
+
 def _check_club_metrics(metrics: Metrics, issues: IssueCollector) -> None:
     missing = []
     if not metrics.of("point_b_program"):
@@ -205,28 +210,28 @@ def _check_club_metrics(metrics: Metrics, issues: IssueCollector) -> None:
     if not metrics.of("point_b_club", "point_a_club"):
         missing.append("точку Б (клуб)")
     if missing:
-        issues.add("missing_point_b_club", "Не вказано " + " і ".join(missing))
+        _missing(issues, "missing_point_b_club", "Не вказано " + " і ".join(missing))
     if not metrics.growth_reason:
-        issues.add("missing_growth_reason")
+        _missing(issues, "missing_growth_reason")
 
 
 def check_hypothesis(doc: ParsedDocument, is_club: bool, settings: Settings, issues: IssueCollector) -> Metrics:
     body = doc.body_paragraphs
     metrics = extract_metrics(body)
     if not metrics.of("point_a", "point_a_club"):
-        issues.add("missing_point_a")
+        _missing(issues, "missing_point_a")
     if not metrics.planned:
-        issues.add("missing_point_b")
+        _missing(issues, "missing_point_b")
     if not metrics.of("price"):
-        issues.add("missing_question_value")
+        _missing(issues, "missing_question_value")
     if is_club:
         _check_club_metrics(metrics, issues)
 
     rest = _probe(_text_without_metrics(body, metrics))
     if not _HYPOTHESIS_TEXT_RE.search(rest) and len(re.findall(r"[^\W\d_]{3,}", rest)) < _MIN_HYPOTHESIS_WORDS:
-        issues.add("missing_hypothesis_description")
+        _missing(issues, "missing_hypothesis_description")
     if not _QUESTIONS_RE.search(rest):
-        issues.add("missing_author_questions")
+        _missing(issues, "missing_author_questions")
 
     _check_currency(metrics, issues)
     _check_question_value(metrics, settings, issues)
@@ -239,20 +244,20 @@ def check_strategic_question(
     body = doc.body_paragraphs
     metrics = extract_metrics(body)
     if not metrics.of("point_a", "point_a_club"):
-        issues.add("missing_point_a")
+        _missing(issues, "missing_point_a")
     if is_club:
         # Для річного доступу в стратегічному питанні обов'язкові ті самі показники, що й у гіпотезі
         if not metrics.planned:
-            issues.add("missing_point_b")
+            _missing(issues, "missing_point_b")
         if not metrics.of("price"):
-            issues.add("missing_question_value")
+            _missing(issues, "missing_question_value")
         _check_club_metrics(metrics, issues)
 
     text = _probe(doc.body_text)
     if not _STRATEGIC_REASON_RE.search(text):
-        issues.add("missing_strategic_reason")
+        _missing(issues, "missing_strategic_reason")
     if not _OPTIONS_RE.search(text):
-        issues.add("missing_solution_options")
+        _missing(issues, "missing_solution_options")
 
     _check_currency(metrics, issues)
     if metrics.of("price"):

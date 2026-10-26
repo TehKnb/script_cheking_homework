@@ -92,10 +92,10 @@ ISSUE_CATALOG: dict[str, IssueSpec] = {
         "та кількість населення, наприклад: «м. Березівка (7 000), Одеська обл.»",
     ),
     "missing_package": IssueSpec(
-        Area.STRUCTURE, Severity.REVISION, "Відсутній або не розпізнаний пакет (Стандарт, ВІП, ВІП+, Річна)"
+        Area.STRUCTURE, Severity.REVISION, "Відсутній або не розпізнаний пакет (Економ, Стандарт, ВІП, ВІП+, Річна, КМ+, Платинум КМ, ПРОРИВ)"
     ),
     "missing_flow_number": IssueSpec(
-        Area.STRUCTURE, Severity.REVISION, "Відсутній номер потоку — його пишуть разом із пакетом, наприклад «ВІП67»"
+        Area.STRUCTURE, Severity.REVISION, "Для Річної потрібно вказати номер потоку разом із пакетом, наприклад «Річна63»"
     ),
     "missing_dz_number": IssueSpec(Area.STRUCTURE, Severity.REVISION, "Відсутній номер ДЗ (формат: «ДЗ №N»)"),
     "missing_work_type_marker": IssueSpec(
@@ -312,7 +312,10 @@ class IssueCollector:
         self._severities: list[Severity] = []
         self._seen: set[tuple[str, str, str]] = set()
 
-    def add(self, code: str, detail: str | None = None, area: Area | None = None) -> None:
+    def add(
+        self, code: str, detail: str | None = None, area: Area | None = None, severity: Severity | None = None
+    ) -> None:
+        """severity — замість типової серйозності коду (той самий код буває і для доопрацювання, і для людини)."""
         spec = ISSUE_CATALOG[code]
         if not detail:
             description = spec.description
@@ -326,7 +329,7 @@ class IssueCollector:
             return
         self._seen.add(key)
         self._issues.append(Issue(code=code, area=resolved_area, description=description))
-        self._severities.append(spec.severity)
+        self._severities.append(severity or spec.severity)
 
     def has(self, code: str) -> bool:
         return any(i.code == code for i in self._issues)
