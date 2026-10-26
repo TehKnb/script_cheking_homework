@@ -80,7 +80,7 @@ ISSUE_CATALOG: dict[str, IssueSpec] = {
         Area.STRUCTURE,
         Severity.REVISION,
         "Назва документа і перший рядок мають бути заповнені за форматом: "
-        "Прізвище Ім'я – Бізнес – Місто – Пакет – ДЗ №N / Гіпотеза / Стратегічне питання",
+        "Прізвище Ім'я – Бізнес – Місто – Пакет – ДЗ №N (для Гіпотези чи Стратегічного питання тип можна не вказувати)",
     ),
     "missing_student_name": IssueSpec(Area.STRUCTURE, Severity.REVISION, "Відсутні прізвище та ім'я студента"),
     "missing_business": IssueSpec(Area.STRUCTURE, Severity.REVISION, "Відсутня назва бізнесу"),
@@ -101,7 +101,7 @@ ISSUE_CATALOG: dict[str, IssueSpec] = {
     "missing_work_type_marker": IssueSpec(
         Area.STRUCTURE,
         Severity.REVISION,
-        "Відсутнє позначення типу роботи в кінці («ДЗ №N», «Гіпотеза» або «Стратегічне питання»)",
+        "Відсутнє позначення ДЗ в кінці шапки («ДЗ №N»)",
     ),
     "forbidden_placeholder_word": IssueSpec(
         Area.STRUCTURE,

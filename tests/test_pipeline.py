@@ -221,6 +221,21 @@ def test_hypothesis_without_type_in_header_and_file_name(run_check):
     assert result.issues == []
 
 
+def test_type_without_marker_is_detected_from_loose_content(run_check):
+    header = header_parts(marker="Гіпотеза")[:-1]
+    file_name = "Іваненко Іван – Кав'ярня – Київ – ВІП67.docx"
+    hypothesis = plain("Моя точка А (потік) – 3 000 $", "Хочемо затестувати гіпотезу з доставкою в офіси.")
+    question = plain("Моя точка А (потік) – 3 000 $", "Моє питання про зміну мотивації у відділі продажів.")
+    unclear = plain("Текст роботи без точок і питань, лише опис бізнесу кав'ярні.")
+    for body, expected in ((hypothesis, WorkType.HYPOTHESIS), (question, WorkType.STRATEGIC_QUESTION)):
+        result = run_check(DocSpec(header, body), file_name)
+        assert result.work_type == expected
+        assert "missing_work_type_marker" not in codes(result)
+    result = run_check(DocSpec(header, unclear), file_name)
+    assert result.status == Status.MANUAL_REVIEW
+    assert "unclear_work_type" in codes(result) and "missing_work_type_marker" not in codes(result)
+
+
 def test_new_packages_in_black_without_flow(run_check):
     # Платинум КМ — річний доступ (як КМ+), тож потрібні клубні показники
     for package, body in (("ПРОРИВ", HYPOTHESIS_BODY), ("Платинум КМ", CLUB_BODY), ("Економ", HYPOTHESIS_BODY)):

@@ -14,6 +14,11 @@ _SQ_CONTENT_RE = re.compile(
 )
 _HYPOTHESIS_CONTENT_RE = re.compile(r"гіпотеза\s+полягає|моя\s+гіпотеза|ціна\s+питання|планован\w*\s+т")
 _HYPOTHESIS_CLAIM_RE = re.compile(r"гіпотеза\s+полягає|моя\s+гіпотеза")
+# Запасні ознаки, коли тип не вказано в шапці (це дозволено для Гіпотези й Стратегічного питання)
+_HYPOTHESIS_WORD_RE = re.compile(r"гіпотез|гипотез")
+_STRATEGIC_WORD_RE = re.compile(r"стратегічн|стратегическ")
+_POINT_A_RE = re.compile(r"(?<![^\W\d_])(?:точк[аи]\s*а|т\.\s*а)(?![^\W\d_])")
+_QUESTION_RE = re.compile(r"(?<![^\W\d_])(?:питанн|запитанн|вопрос)")
 
 
 def _types_from(parsed: HeaderParseResult) -> set[WorkType]:
@@ -29,6 +34,14 @@ def classify_by_content(body_text: str) -> WorkType:
         return WorkType.STRATEGIC_QUESTION
     if _HYPOTHESIS_CONTENT_RE.search(text):
         return WorkType.HYPOTHESIS
+    # «…затестувати гіпотезу…», «…питання стратегічне для бізнесу…»
+    if _HYPOTHESIS_WORD_RE.search(text):
+        return WorkType.HYPOTHESIS
+    if _STRATEGIC_WORD_RE.search(text):
+        return WorkType.STRATEGIC_QUESTION
+    # Точка А і «Моє питання …» без ціни питання — шаблон Стратегічного питання
+    if _POINT_A_RE.search(text) and _QUESTION_RE.search(text):
+        return WorkType.STRATEGIC_QUESTION
     return WorkType.UNKNOWN
 
 

@@ -510,8 +510,9 @@ def check_header(
         issues.add("missing_flow_number", f"{where.capitalize()} Річну вказано без номера потоку", area)
 
     if parsed.marker is None:
-        # Гіпотезу й Стратегічне питання можна не позначати в шапці — тип визначено за змістом
-        if work_type not in (WorkType.HYPOTHESIS, WorkType.STRATEGIC_QUESTION):
+        # Обов'язкове лише «ДЗ №N». Гіпотезу й Стратегічне питання можна не позначати: тип визначаємо за змістом,
+        # а коли не вдалося — це вже unclear_work_type (ручна перевірка), а не помилка студента
+        if work_type == WorkType.DZ:
             issues.add("missing_work_type_marker", f"Не знайдено {where}", area)
     elif work_type == WorkType.DZ and parsed.marker_type == WorkType.DZ and not parsed.dz_number:
         issues.add("missing_dz_number", f"{where.capitalize()} вказано «{parsed.marker.value}»", area)
