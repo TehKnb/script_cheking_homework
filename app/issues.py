@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from app.models import Area, Issue
+from app.utils.text import telegram_safe
 
 
 class Severity(str, Enum):
@@ -323,6 +324,7 @@ class IssueCollector:
             description = f"{spec.description.rstrip('.')}:{detail}"
         else:
             description = f"{spec.description}. {detail}"
+        description = telegram_safe(description)
         resolved_area = area or spec.area
         key = (code, resolved_area.value, description)
         if key in self._seen:

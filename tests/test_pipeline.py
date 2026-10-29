@@ -272,6 +272,33 @@ def test_strategic_question_passes(run_check):
     assert run_check(DocSpec(header_parts(marker="Стратегічне питання"), body), SQ_FILE).issues == []
 
 
+def test_strategic_question_with_directions_and_unchecked_price(run_check):
+    # «Моє стратегічне питання: …», варіанти як «напрямки», ціна питання без планованої т.Б (у потоці не обов'язкова)
+    body = plain(
+        "Моя точка А (потік) - 3 000 $",
+        "Ціна питання - 36 000 $",
+        "Маю два напрямки масштабування:",
+        "Перший — масштабувати рекламні зв'язки, які вже приносять ліди.",
+        "Другий — розвивати нове позиціонування подарунків на день народження.",
+        "Моє стратегічне питання: як розподілити бюджет і час команди між цими напрямками?",
+    )
+    header = header_parts(package="ПРОРИВ63-3", marker="Стратегічне питання")
+    file_name = "Іваненко Іван – Кав'ярня – Київ – ПРОРИВ63-3 – Стратегічне питання (1).docx"
+    result = run_check(DocSpec(header, body), file_name)
+    assert result.issues == []
+    assert result.extracted_data.package == "ПРОРИВ" and result.extracted_data.flow_number == "63"
+
+
+def test_issue_texts_have_no_telegram_markup(run_check):
+    body = plain("Текст роботи.")
+    body.append([Part("______________", size=14)])  # лінія для підпису — не текст
+    body.append([Part("Рядок 14 розміру з_підкресленням і <тегом> & [дужкою] * `", size=14)])
+    result = run_check(DocSpec(header_parts(), body), DZ_FILE)
+    text = " ".join(i.description for i in result.issues)
+    assert "wrong_body_text_size" in codes(result) and "______" not in text
+    assert not set("_*`[]<>&") & set(text)
+
+
 def test_strategic_question_missing_parts(run_check):
     body = plain("Я хочу розвивати бізнес і заробляти більше грошей у наступному році, працюю над цим щодня.")
     result = run_check(DocSpec(header_parts(marker="Стратегічне питання"), body), SQ_FILE)

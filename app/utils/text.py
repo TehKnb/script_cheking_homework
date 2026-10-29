@@ -38,6 +38,17 @@ def fold_lookalikes(text: str) -> str:
     return text.translate(_LATIN_TO_CYRILLIC)
 
 
+# Символи розмітки Telegram (Markdown: _ * ` [ ], HTML: < > &) у тексті зауважень ламають повідомлення n8n
+# («Can't find end of the entity»). Замінюємо їх схожими на вигляд символами, які розміткою не є.
+_TELEGRAM_SAFE = str.maketrans({
+    "_": "＿", "*": "∗", "`": "'", "[": "［", "]": "］", "<": "＜", ">": "＞", "&": "＆",
+})
+
+
+def telegram_safe(text: str) -> str:
+    return text.translate(_TELEGRAM_SAFE)
+
+
 def shorten(text: str, limit: int = 60) -> str:
     text = normalize(text)
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"

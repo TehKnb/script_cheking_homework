@@ -208,10 +208,15 @@ def _bold_positions(line) -> set[int]:
     return {run.start + i for run in line.runs if run.bold for i in range(len(run.text))}
 
 
+# « (1)», «(2)» — браузер дописує до повторно завантаженого файлу
+_DUPLICATE_SUFFIX_RE = re.compile(r"\s*\(\d{1,2}\)$")
+
+
 def _file_stem(file_name: str) -> str:
     name = PurePath(normalize(file_name)).name
     path = PurePath(name)
-    return path.stem if path.suffix.lower() in _KNOWN_EXTENSIONS else name
+    stem = path.stem if path.suffix.lower() in _KNOWN_EXTENSIONS else name
+    return _DUPLICATE_SUFFIX_RE.sub("", stem)
 
 
 _SHORT_DOS_NAME_RE = re.compile(r"[A-Z0-9_\-!#$%&'()@^`{}]{1,6}~\d{1,6}", re.I)

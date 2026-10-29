@@ -47,7 +47,8 @@ def check_formatting(
 
 
 def _visible(run: RunInfo) -> bool:
-    return bool(run.text.strip())
+    """Є літери чи цифри: лінія з підкреслень «______» чи окреме тире — не текст, розмір не перевіряємо."""
+    return any(_is_text_char(ch) for ch in run.text)
 
 
 def _is_text_char(ch: str) -> bool:

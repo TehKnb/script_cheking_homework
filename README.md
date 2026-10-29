@@ -106,6 +106,8 @@ curl -X POST localhost:8000/check-document \
    Відповідь студенту (Telegram → Send Message):
    * Chat ID: `{{ $('Telegram Trigger').item.json.message.chat.id }}`
    * Text: `Робота потребує доопрацювання:\n{{ $json.issues.map(i => '• ' + i.description).join('\n') }}`
+   * Тексти зауважень безпечні для будь-якого Parse Mode: символи розмітки Telegram (`_ * [ ] < > &` і зворотний
+     апостроф) сервіс замінює схожими (＿ ∗ ［ ］ ＜ ＞ ＆ '), тож «Can't find end of the entity» через текст студента не буде.
 
 Після перезапуску швидкого тунелю оновіть URL у вузлі HTTP Request (або перейдіть на `named`).
 
