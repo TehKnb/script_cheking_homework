@@ -72,6 +72,8 @@ class ParagraphInfo:
     text: str
     runs: list[RunInfo]
     in_table: bool = False
+    # Шапка з двох абзаців: з цієї позиції тексту йде приєднаний другий рядок («ДЗ 6» окремим абзацом)
+    continuation_at: int | None = None
 
     @property
     def is_empty(self) -> bool:
@@ -197,7 +199,8 @@ def load_docx(data: bytes, max_unzipped_bytes: int) -> ParsedDocument:
 def _merge_header_continuation(lines: list[ParagraphInfo]) -> list[ParagraphInfo]:
     """Довгу шапку Word іноді розбиває на два абзаци: «Іваненко Іван – Юридичний супровід …, -» / «м Вишково,
     Закарпаття – ВІП67 – ДЗ№2». Якщо перший рядок обривається роздільником (або в ньому немає ні пакета,
-    ні типу роботи), а наступний короткий рядок того ж розміру шрифту їх містить, — це одна шапка."""
+    ні типу роботи), а наступний короткий рядок того ж розміру шрифту їх містить, — це одна шапка.
+    Зовсім короткий рядок («ДЗ 6», «Гіпотеза») приєднуємо за будь-якого розміру: студенти пишуть його 12-м."""
     filled = [line for line in lines if not line.is_empty]
     if len(filled) < 2:
         return lines
@@ -207,7 +210,7 @@ def _merge_header_continuation(lines: list[ParagraphInfo]) -> list[ParagraphInfo
         return lines
     if not dangling and _HEADER_TAIL_RE.search(first.text):
         return lines
-    if abs(_main_size(first) - _main_size(nxt)) > 0.5:
+    if abs(_main_size(first) - _main_size(nxt)) > 0.5 and len(nxt.text.strip()) > 40:
         return lines
     shift = len(first.text) + 1
     merged = ParagraphInfo(
@@ -215,6 +218,7 @@ def _merge_header_continuation(lines: list[ParagraphInfo]) -> list[ParagraphInfo
         text=f"{first.text} {nxt.text}",
         runs=first.runs + [replace(r, start=r.start + shift, end=r.end + shift) for r in nxt.runs],
         in_table=first.in_table,
+        continuation_at=shift,
     )
     return [merged if line is first else line for line in lines if line is not nxt]
 

@@ -466,6 +466,26 @@ def test_file_name_without_package_is_still_an_error(run_check):
     assert {"missing_package", "missing_work_type_marker"} <= codes(result)
 
 
+def _sloppy_header() -> list[Part]:
+    return [Part("Іваненко Іван_"), Part("Кафе", bold=True), Part("-Ужгород-"), Part("ВІП67", bold=True, color=RED), Part("-")]
+
+
+def test_dz_marker_on_its_own_12pt_line_is_part_of_header(run_check):
+    body = [[Part("ДЗ 6", size=12)], *plain("Текст роботи.")]
+    result = run_check(DocSpec(_sloppy_header(), body), "Іваненко Іван – Кафе – Ужгород – ВІП67 – ДЗ №6.docx")
+    assert result.work_type == WorkType.DZ
+    assert result.extracted_data.student_name == "Іваненко Іван" and result.extracted_data.city == "Ужгород"
+    assert "wrong_first_line_size" not in codes(result) and "unclear_work_type" not in codes(result)
+
+
+def test_badly_signed_work_is_still_checked(run_check):
+    # Тип роботи — з рядка «ДЗ 6» після порожнього рядка; назва файлу без типу
+    body = [[Part("")], [Part("")], [Part("ДЗ 6")], *plain("Текст роботи.")]
+    result = run_check(DocSpec(_sloppy_header(), body), "document.docx")
+    assert result.work_type == WorkType.DZ
+    assert "unclear_work_type" not in codes(result)
+
+
 def test_staff_lines_are_not_student_text():
     from app.services.document_loader import load_docx
 

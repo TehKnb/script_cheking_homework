@@ -95,7 +95,9 @@ def _fmt_pt(value: float) -> str:
 def _check_sizes(
     first: ParagraphInfo, body: list[ParagraphInfo], settings: Settings, issues: IssueCollector
 ) -> None:
-    first_sizes = {run.size_pt for run in first.runs if _visible(run)}
+    # Розмір першого рядка — без приєднаного другого рядка шапки («ДЗ 6» окремим абзацом 12-м шрифтом)
+    own = [r for r in first.runs if first.continuation_at is None or r.start < first.continuation_at]
+    first_sizes = {run.size_pt for run in own if _visible(run)}
     bad_first = sorted(s for s in first_sizes if abs(s - settings.first_line_size_pt) > 0.01)
     if bad_first:
         issues.add("wrong_first_line_size", f"Фактичний розмір: {', '.join(_fmt_pt(s) for s in bad_first)}")

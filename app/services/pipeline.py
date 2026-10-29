@@ -17,7 +17,13 @@ from app.checkers.content import (
 )
 from app.checkers.formatting import check_formatting
 from app.checkers.funnel import check_funnels, smartart_off_page
-from app.checkers.header import HeaderParseResult, check_header, check_header_consistency, parse_header
+from app.checkers.header import (
+    HeaderParseResult,
+    check_header,
+    check_header_consistency,
+    marker_type,
+    parse_header,
+)
 from app.checkers.links import check_links
 from app.checkers.spelling import check_spelling
 from app.checkers.structure import check_dz, check_hypothesis, check_strategic_question
@@ -96,11 +102,14 @@ class DocumentChecker:
             parse_header(first.text, bold_positions=_bold_positions(first)) if first else HeaderParseResult("")
         )
         work_type = classify_work_type(file_header, text_header, doc.body_text)
+        early_type, early_dz = _type_from_early_lines(doc)
+        if work_type == WorkType.UNKNOWN and early_type is not None:
+            work_type = early_type
         if first is None:
             issues.add("empty_document")
         if work_type == WorkType.UNKNOWN:
             issues.add("unclear_work_type")
-        dz_number = text_header.dz_number or file_header.dz_number
+        dz_number = text_header.dz_number or file_header.dz_number or early_dz
         is_club = text_header.is_club or file_header.is_club
 
         # 3. Шапка: назва файлу та перший рядок.
@@ -202,6 +211,16 @@ class DocumentChecker:
 
 
 # ------------------------------------------------------------------ helpers
+
+
+def _type_from_early_lines(doc: ParsedDocument, lines: int = 3) -> tuple[WorkType | None, str | None]:
+    """Шапку підписано некоректно, а «ДЗ 6» / «Гіпотеза» стоїть окремим коротким рядком на початку тексту."""
+    for paragraph in [p for p in doc.body_paragraphs if not p.is_empty][:lines]:
+        if len(paragraph.text.strip()) <= 40:
+            wtype, number = marker_type(paragraph.text)
+            if wtype is not None:
+                return wtype, number
+    return None, None
 
 
 def _bold_positions(line) -> set[int]:

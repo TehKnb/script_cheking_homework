@@ -23,6 +23,8 @@ from app.utils.text import normalize, quote_list
 SEPARATOR_RE = re.compile(r"\s*[–—]\s*|\s+-\s+|\s-(?=\S)|(?<=\S)-\s")
 # Запасний варіант: «Коваль Ірина-Штори-карнизи-Черкаси-Річна63-Гіпотеза» (дефіси без пробілів)
 _LOOSE_SEPARATOR_RE = re.compile(r"\s*[-–—]\s*")
+# …і змішано з підкресленням: «Пильник Галина_Кафе-Ужгород-ВІП67-»
+_LOOSE_ANY_SEPARATOR_RE = re.compile(r"\s*[-–—_]\s*")
 _UNDERSCORE_RE = re.compile(r"\s*_\s*")
 
 _DZ_MARKER_RE = re.compile(
@@ -204,7 +206,7 @@ def split_segments(text: str, allow_underscore: bool = False) -> list[Segment]:
         return _split(text, _UNDERSCORE_RE)
     segments = _split(text, SEPARATOR_RE)
     if len(segments) < 4 and "-" in text:
-        loose = _split(text, _LOOSE_SEPARATOR_RE)
+        loose = max((_split(text, p) for p in (_LOOSE_SEPARATOR_RE, _LOOSE_ANY_SEPARATOR_RE)), key=len)
         if len(loose) >= 4:
             return loose
     return segments
