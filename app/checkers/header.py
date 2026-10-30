@@ -20,15 +20,18 @@ from app.issues import IssueCollector
 from app.models import Area, WorkType
 from app.utils.text import normalize, quote_list
 
-SEPARATOR_RE = re.compile(r"\s*[–—]\s*|\s+-\s+|\s-(?=\S)|(?<=\S)-\s")
+# «-» і схожі на нього ‐ ‑ ‒ − (Word підставляє при автозаміні) — роздільник лише з пробілом хоча б з одного боку
+SEPARATOR_RE = re.compile(r"\s*[–—]\s*|\s+[-‐‑‒−]\s+|\s[-‐‑‒−](?=\S)|(?<=\S)[-‐‑‒−]\s")
 # Запасний варіант: «Коваль Ірина-Штори-карнизи-Черкаси-Річна63-Гіпотеза» (дефіси без пробілів)
 _LOOSE_SEPARATOR_RE = re.compile(r"\s*[-–—]\s*")
 # …і змішано з підкресленням: «Пильник Галина_Кафе-Ужгород-ВІП67-»
 _LOOSE_ANY_SEPARATOR_RE = re.compile(r"\s*[-–—_]\s*")
 _UNDERSCORE_RE = re.compile(r"\s*_\s*")
 
+# «ДЗ», «DZ», «Д/З», «Д.З», «Д,З», «Д. З.»
+_DZ_WORD = r"(?:ДЗ|DZ|Д\s*[/.,]\s*З\.?)"
 _DZ_MARKER_RE = re.compile(
-    r"^(?:ДЗ|DZ|Д/З|домашн\w*\s+завдан\w*)(?![^\W\d_])\s*(?:№|#|N|No\.?)?\s*(?P<num>\d+)?",
+    r"^(?:" + _DZ_WORD + r"|домашн\w*\s+завдан\w*)(?![^\W\d_])\s*(?:№|#|N|No\.?)?\s*(?P<num>\d+)?",
     re.IGNORECASE,
 )
 _HYPOTHESIS_RE = re.compile(r"гіпотез|гипотез", re.IGNORECASE)
@@ -36,7 +39,7 @@ _STRATEGIC_RE = re.compile(
     r"стратегічн\w*\s+(?:питанн|запитанн)|стратегическ\w*\s+вопрос|важлив\w*\s+питанн|страт\.\s*питанн",
     re.IGNORECASE,
 )
-_DZ_ANYWHERE_RE = re.compile(r"(?<![^\W\d_])(?:ДЗ|DZ|Д/З)(?![^\W\d_])|домашн\w*\s+завдан", re.IGNORECASE)
+_DZ_ANYWHERE_RE = re.compile(r"(?<![^\W\d_])" + _DZ_WORD + r"(?![^\W\d_])|домашн\w*\s+завдан", re.IGNORECASE)
 
 
 # ------------------------------------------------------------------ packages
@@ -201,8 +204,20 @@ class HeaderParseResult:
         return [p for p in (_CITY_PREFIX_RE.sub("", p.strip()) for p in parts) if p]
 
 
+# «ВІП67 ДЗ №6» — пакет і тип роботи в одній частині без роздільника
+_TRAILING_MARKER_RE = re.compile(
+    r"^(?P<head>.*\S)\s+(?P<marker>" + _DZ_WORD + r"\s*(?:№|#|N)?\s*\d+|гіпотез\w*|стратегічн\w*\s+(?:питанн|запитанн)\w*)$",
+    re.IGNORECASE,
+)
+
+
+def _is_underscore_name(text: str, allow_underscore: bool) -> bool:
+    """Назва файлу, де пробіли замінено на «_» (так зберігають браузери/месенджери), навіть з «—» усередині."""
+    return allow_underscore and "_" in text and (not SEPARATOR_RE.search(text) or " " not in text.strip())
+
+
 def split_segments(text: str, allow_underscore: bool = False) -> list[Segment]:
-    if allow_underscore and not SEPARATOR_RE.search(text) and "_" in text:
+    if _is_underscore_name(text, allow_underscore):
         return _split(text, _UNDERSCORE_RE)
     segments = _split(text, SEPARATOR_RE)
     if len(segments) < 4 and "-" in text:
@@ -279,10 +294,23 @@ def parse_header(
     result = HeaderParseResult(
         source=text,
         segments_count=len(segments),
-        underscore_mode=allow_underscore and not SEPARATOR_RE.search(text) and "_" in text,
+        underscore_mode=_is_underscore_name(text, allow_underscore),
     )
     if not segments:
         return result
+
+    tail = _TRAILING_MARKER_RE.match(segments[-1].raw)
+    if len(segments) >= 3 and tail and parse_package(tail.group("head")):
+        last = segments[-1]
+        marker_start = last.start + tail.start("marker")
+        segments[-1:] = [
+            Segment(tail.group("head"), last.start, last.start + tail.end("head")),
+            Segment(tail.group("marker"), marker_start, last.end),
+        ]
+        result.segments_count = len(segments)
+
+    _split_glued_package(segments)
+    result.segments_count = len(segments)
 
     # «ДЗ№7 Мельник Остап – …» — позначення на початку замість кінця
     lead = _DZ_MARKER_RE.match(segments[0].raw)
@@ -357,6 +385,21 @@ def parse_header(
         rest = [None, *rest]  # ім'я відсутнє — зсуваємо
     _assign_main_fields(result, text, rest, bold_positions)
     return result
+
+
+def _split_glued_package(segments: list[Segment]) -> None:
+    """«Чернівці-ВІП-67 потік»: пакет приклеєно дефісом до міста. Якщо окремого сегмента з пакетом немає,
+    відділяємо від сегмента хвіст після дефіса, що розбирається як пакет."""
+    if any(parse_package(s.raw) for s in segments[1:]):
+        return
+    for idx in range(len(segments) - 1, 0, -1):
+        seg = segments[idx]
+        for m in re.finditer(r"[-‐‑‒−]", seg.raw):
+            head, tail = seg.raw[: m.start()].rstrip(), seg.raw[m.end() :].lstrip()
+            if head and tail and parse_package(tail):
+                tail_start = seg.start + len(seg.raw) - len(tail)
+                segments[idx : idx + 1] = [Segment(head, seg.start, seg.start + len(head)), Segment(tail, tail_start, seg.end)]
+                return
 
 
 _NAME_HYPHEN_RE = re.compile(r"^([A-ZА-ЯІЇЄҐ][a-zа-яіїєґ'’ʼ]+\s+[A-ZА-ЯІЇЄҐ][a-zа-яіїєґ'’ʼ]+)-(?=\S)")

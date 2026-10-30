@@ -48,6 +48,21 @@ def has_non_usd(text: str) -> bool:
     return bool(_NON_USD_AMOUNT_RE.search(text))
 
 
+# Ціна без жодної валюти: «Комплект інсталяції по 7999», «Радіатор за 6400», «Ціна 151», «чек: 1369».
+# Число ≥ 100 після «по / за / ціна / вартість / коштує / чек», після якого не стоїть валюта, % чи слово
+# («по 100 штук», «за 2024 рік» — не ціни). У прийнятих роботах такого немає.
+_BARE_PRICE_RE = re.compile(
+    r"(?<![^\W\d_])(?:по|за|ціна|ціною|вартість|вартістю|коштує|коштують|чек)\s*[:–—-]?\s*"
+    r"(?:\d{1,3}(?:[  ]\d{3})+|\d{3,})(?:[.,]\d+)?"
+    r"(?!\s*(?:\$|%|[^\W\d_]))(?=\s*(?:[,.;:)!?]|$))",
+    re.IGNORECASE,
+)
+
+
+def find_bare_prices(paragraphs: list[ParagraphInfo]) -> list[str]:
+    return [m.group(0).strip() for p in paragraphs for m in _BARE_PRICE_RE.finditer(p.text)]
+
+
 # ДЗ№3 — найм персоналу: зарплати в гривнях там природні, у відмовах на це не зважають
 _CURRENCY_EXEMPT_DZ = {"3"}
 
@@ -60,6 +75,9 @@ def check_currency(
     stats = currency_stats(doc.body_text)
     if len(stats.non_usd) > _NON_USD_TOLERANCE and len(stats.non_usd) >= stats.usd:
         issues.add("wrong_currency", f"Знайдено суми не в доларах: {quote_list(stats.non_usd)}")
+    bare = find_bare_prices(doc.body_paragraphs)
+    if bare:
+        issues.add("missing_currency", f"Ціни без валюти: {quote_list(bare)}")
 
 
 # --------------------------------------------------------------- punctuation

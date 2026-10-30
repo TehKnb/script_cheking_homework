@@ -1,7 +1,7 @@
 import pytest
 
 from app.checkers.classification import classify_work_type
-from app.checkers.header import check_header, parse_header, parse_package
+from app.checkers.header import detect_work_types, check_header, parse_header, parse_package
 from app.issues import IssueCollector
 from app.models import Area, WorkType
 from tests.conftest import make_settings
@@ -175,6 +175,40 @@ def test_work_type_marker_optional_for_hypothesis_and_question():
     issues = IssueCollector()
     check_header(parse_header("Іваненко Іван – Кафе – Київ – ВІП67"), WorkType.DZ, Area.STRUCTURE, make_settings(), issues)
     assert [i.code for i in issues.issues] == ["missing_work_type_marker"]
+
+
+@pytest.mark.parametrize("dash", ["-", "‐", "−"])
+def test_package_and_dz_in_one_segment(dash):
+    text = f"Іваненко Іван – Вирощування квітів – м.Радивилів, Рівненська область {dash} ВІП67 ДЗ №6"
+    parsed = parse_header(text)
+    assert parsed.package_info.display == "ВІП67"
+    assert parsed.city.value == "м.Радивилів, Рівненська область"
+    assert parsed.marker_type == WorkType.DZ and parsed.dz_number == "6"
+    assert _codes(text) == set()
+
+
+@pytest.mark.parametrize("marker", ["Д.З№6", "Д,З №6", "Д. З. №6", "Д/З 6"])
+def test_dz_marker_with_dot_or_comma(marker):
+    parsed = parse_header(f"Іваненко Іван – стоматологія-Калуш- ВІП67+ {marker}")
+    assert parsed.package_info.display == "ВІП+67" and parsed.city.value == "Калуш"
+    assert parsed.marker_type == WorkType.DZ and parsed.dz_number == "6"
+
+
+def test_package_glued_to_city_by_hyphen():
+    parsed = parse_header("Іваненко Іван- Товари для дому – Чернівці-ВІП-67 - ДЗ №6")
+    assert parsed.city.value == "Чернівці" and parsed.package_info.display == "ВІП67"
+    assert parsed.dz_number == "6"
+
+
+def test_dz_marker_in_file_name_only():
+    assert detect_work_types("Д,З №6") == {WorkType.DZ}
+
+
+def test_underscore_file_name_with_dash_is_lenient():
+    issues = IssueCollector()
+    parsed = parse_header("Іваненко_Іван_—_вирощування_квітів_м_Радивилів,", allow_underscore=True)
+    check_header(parsed, WorkType.DZ, Area.FILE_NAME, make_settings(), issues)
+    assert parsed.underscore_mode and issues.issues == []
 
 
 def test_underscore_file_names_are_lenient():

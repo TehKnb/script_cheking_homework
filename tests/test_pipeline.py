@@ -135,6 +135,22 @@ def test_currency(run_check):
     assert "wrong_currency" not in codes(run_check(DocSpec(header_parts(marker="ДЗ №1"), few), dz1))
 
 
+def test_prices_without_currency(run_check):
+    body = plain(
+        "Лід магніт товари:",
+        "- Комплект інсталяції по 7999",
+        "- Дизайнерський радіатор за 6400",
+        "Замовляємо по 100 штук, працюємо за 2024 рік, конверсія за 300 %.",
+    )
+    result = run_check(DocSpec(header_parts(marker="ДЗ №6"), body), "Іваненко Іван – Кав'ярня – Київ – ВІП67 – ДЗ №6.doc")
+    issue = next(i for i in result.issues if i.code == "missing_currency")
+    assert "по 7999" in issue.description and "за 6400" in issue.description
+    assert "100" not in issue.description and "2024" not in issue.description and "300" not in issue.description
+    ok = plain("- Комплект інсталяції по 7999 $", "- Радіатор за 6400$", "Відкручений бюджет 10 доларів")
+    result = run_check(DocSpec(header_parts(marker="ДЗ №6"), ok), "Іваненко Іван – Кав'ярня – Київ – ВІП67 – ДЗ №6.doc")
+    assert "missing_currency" not in codes(result)
+
+
 def test_missing_space_after_punctuation(run_check):
     body = plain("Клієнти задоволені,рейтинги високі.пацієнти радіють,персонал працює,все добре.дякую")
     assert "missing_space_after_punctuation" in codes(run_check(DocSpec(header_parts(), body)))
@@ -476,6 +492,15 @@ def test_dz_marker_on_its_own_12pt_line_is_part_of_header(run_check):
     assert result.work_type == WorkType.DZ
     assert result.extracted_data.student_name == "Іваненко Іван" and result.extracted_data.city == "Ужгород"
     assert "wrong_first_line_size" not in codes(result) and "unclear_work_type" not in codes(result)
+
+
+def test_header_continued_with_city_and_package(run_check):
+    # Enter після бізнесу: «Чернівці-ВІП67 - ДЗ №6» на другому рядку
+    first = [Part("Іваненко Іван- "), Part("Товари для дому", bold=True), Part(" –")]
+    second = [Part("Чернівці-"), Part("ВІП67", bold=True, color=RED), Part(" - ДЗ №6")]
+    result = run_check(DocSpec(first, [second, *plain("Текст роботи.")]), "Іваненко Іван – Товари для дому – Чернівці – ВІП67 – ДЗ №6.docx")
+    assert result.extracted_data.city == "Чернівці" and result.extracted_data.package == "ВІП"
+    assert result.issues == []
 
 
 def test_badly_signed_work_is_still_checked(run_check):
