@@ -286,7 +286,9 @@ def _report(
         formula = f"{format_number(check.lower.value)} ÷ {format_number(check.upper.value)} × 100% = {expected}%"
         if check.stated is None:
             missing.append(f"{title} · {steps}: немає конверсії (має бути {formula})")
-        elif not is_conversion_correct(check, settings.funnel_conversion_tolerance_pp):
+        elif not is_conversion_correct(
+            check, settings.funnel_conversion_tolerance_pp, settings.funnel_conversion_tolerance_share
+        ):
             stated = f"{check.stated:g}".replace(".", ",")
             wrong.append(f"{title} · {steps}: {formula}, а вказано {stated}%")
     if missing and absence_reliable:

@@ -91,6 +91,21 @@ def test_flow_number_must_be_bold_and_colored(run_check):
     assert {"wrong_bold_formatting", "wrong_package_color"} <= issue_codes
 
 
+def test_package_not_bold_is_named_as_found(run_check):
+    file_name = "Іваненко Іван – Кав'ярня – Київ – ВІП67 – ДЗ №3.doc"
+
+    def bold_issue(parts: list[Part]) -> str:
+        result = run_check(DocSpec(parts), file_name)
+        assert "missing_package" not in codes(result)
+        return next(i.description for i in result.issues if i.code == "wrong_bold_formatting")
+
+    start = [Part("Іваненко Іван – "), Part("Кав'ярня", bold=True), Part(" – Київ – ")]
+    end = Part(" – ДЗ №3")
+    assert "Пакет «ВІП67» не виділено жирним" in bold_issue([*start, Part("ВІП67", color=RED), end])
+    partial = [*start, Part("ВІП", bold=True, color=RED), Part("67", color=RED), end]
+    assert "Пакет «ВІП67» виділено жирним не повністю" in bold_issue(partial)
+
+
 def test_standard_package_blue_shades(run_check):
     file_name = "Іваненко Іван – Кав'ярня – Київ – Стандарт67 – ДЗ №3.doc"
     for color in (BLUE, DARK_BLUE):
@@ -133,6 +148,34 @@ def test_currency(run_check):
     # Поодинокі згадки гривні допускаються
     few = plain("Бронювання коштує 35 000 грн за людину", "Дохід 9 600 $", "Витрати 2 000 $")
     assert "wrong_currency" not in codes(run_check(DocSpec(header_parts(marker="ДЗ №1"), few), dz1))
+
+
+def test_money_without_thousands_separator(run_check):
+    def result_codes(line: str) -> set[str]:
+        body = [*HYPOTHESIS_BODY, [Part(line)]]
+        return codes(run_check(DocSpec(header_parts(marker="Гіпотеза"), body), HYPOTHESIS_FILE))
+
+    assert "wrong_number_format" in result_codes("Точка Б (клуб) - 9800$")
+    assert "wrong_number_format" in result_codes("Товари на $1780")
+    assert "wrong_number_format" not in result_codes("Точка Б (клуб) - 9 800$")
+    assert "wrong_number_format" not in result_codes("Зробили 9800 показів і 999$ витрат, ROI 1500%")
+
+
+def test_spelling_threshold_is_lower_for_hypothesis_and_question(monkeypatch):
+    from app.checkers import spelling
+    from app.issues import IssueCollector
+    from app.services.document_loader import load_docx
+
+    doc = load_docx(build_docx(DocSpec(header_parts(), plain(" ".join(["слово"] * 164)))), 50 << 20)
+    monkeypatch.setattr(spelling, "find_misspelled", lambda words, settings: ["помилка"] * 8)  # 8 з 164 ≈ 4,9%
+    for work_type, expected in (
+        (WorkType.DZ, False),
+        (WorkType.HYPOTHESIS, True),
+        (WorkType.STRATEGIC_QUESTION, True),
+    ):
+        issues = IssueCollector()
+        spelling.check_spelling(doc, make_settings(check_spelling=True), issues, work_type)
+        assert issues.has("too_many_spelling_errors") == expected, work_type
 
 
 def test_prices_without_currency(run_check):
@@ -215,6 +258,23 @@ def test_hypothesis_negative_point_a(run_check):
     body[1] = [Part("Запланована т.Б. - 8 000$")]
     body[2] = [Part("Ціна питання: 121 200$")]
     assert run_check(DocSpec(header_parts(marker="Гіпотеза"), body), HYPOTHESIS_FILE).issues == []
+
+
+def test_hyphen_right_after_metric_name_is_not_minus(run_check):
+    body = list(HYPOTHESIS_BODY)
+    body[0] = [Part("Моя точка А: 3 000$")]
+    body[1] = [Part("Планова т.Б -5 000$ (середньо річна)")]
+    body[2] = [Part("Ціна питання -24 000$")]
+    assert run_check(DocSpec(header_parts(marker="Гіпотеза"), body), HYPOTHESIS_FILE).issues == []
+
+
+def test_minus_after_separator_stays_negative():
+    from app.checkers.structure import extract_metrics
+    from app.services.document_loader import ParagraphInfo
+
+    lines = ["Моя точка А: -7 000$", "Моя т.А - -2 100$", "Планова т.Б -15 000$", "Планова т.Б - 15 000$"]
+    values = [m.value for m in extract_metrics([ParagraphInfo(i, t, []) for i, t in enumerate(lines)]).lines]
+    assert values == [-7000, -2100, 15000, 15000]
 
 
 def test_hypothesis_missing_blocks_and_currency(run_check):

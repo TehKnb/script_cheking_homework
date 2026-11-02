@@ -453,18 +453,19 @@ def _percent_decimals(text: str) -> int:
     return len(re.split(r"[.,]", m.group(1))[1])
 
 
-def is_conversion_correct(check: ConversionCheck, tolerance_pp: float = 0.0) -> bool:
+def is_conversion_correct(check: ConversionCheck, tolerance_pp: float = 0.0, tolerance_share: float = 0.0) -> bool:
     """Похибка — менше одиниці останнього знака, який написав студент: «20%» для 19,6%, «28%» для 28,6%,
     «72%» для 71,43% (округлення вгору в прийнятих роботах трапляється), «7,6%» для 7,64%, «1,15%» для 1,159%.
     А от «8,5%» для 7,64% чи «1,9%» для 1,16% — помилка. Для великих значень (покази/охоплення > 100%)
-    допускаємо ще 1% відносної похибки; tolerance_pp — додатковий допуск у п.п. (за замовчуванням 0)."""
+    допускаємо ще 1% відносної похибки; tolerance_pp — додатковий допуск у п.п. (за замовчуванням 0);
+    tolerance_share — допустима частка від правильного значення (0,05: для 20% приймаємо 19–21%)."""
     if check.frequency:
         return True
     if check.stated is None or check.expected is None:
         return False
     unit = 10.0**-check.stated_decimals
     diff = abs(check.stated - check.expected)
-    if diff < unit - 1e-9 or diff <= tolerance_pp:
+    if diff < unit - 1e-9 or diff <= tolerance_pp or diff <= tolerance_share * abs(check.expected):
         return True
     if abs(check.expected) < 100:
         return False

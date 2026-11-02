@@ -13,6 +13,7 @@ import subprocess
 
 from app.config import Settings
 from app.issues import IssueCollector
+from app.models import WorkType
 from app.services.document_loader import ParsedDocument
 from app.utils.text import URL_RE, normalize, quote_list
 
@@ -58,7 +59,9 @@ def find_misspelled(words: list[str], settings: Settings) -> list[str] | None:
     return [w for w in proc.stdout.decode("utf-8", "ignore").split() if w]
 
 
-def check_spelling(doc: ParsedDocument, settings: Settings, issues: IssueCollector) -> None:
+def check_spelling(
+    doc: ParsedDocument, settings: Settings, issues: IssueCollector, work_type: WorkType = WorkType.UNKNOWN
+) -> None:
     if not settings.check_spelling:
         return
     text = URL_RE.sub(" ", normalize(doc.body_text))
@@ -69,7 +72,9 @@ def check_spelling(doc: ParsedDocument, settings: Settings, issues: IssueCollect
     if misspelled is None:
         return
     share = len(misspelled) / len(words)
-    if len(misspelled) >= _MIN_MISSPELLED and share >= settings.spelling_error_share:
+    short_work = work_type in (WorkType.HYPOTHESIS, WorkType.STRATEGIC_QUESTION)
+    threshold = settings.spelling_error_share_short_works if short_work else settings.spelling_error_share
+    if len(misspelled) >= _MIN_MISSPELLED and share >= threshold:
         issues.add(
             "too_many_spelling_errors",
             f"Слів з помилками ≈{share:.0%} ({len(misspelled)} з {len(words)}), наприклад: {quote_list(misspelled, 8)}",

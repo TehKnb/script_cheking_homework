@@ -156,7 +156,9 @@ def test_materials_mentioned_on_drive_without_link(run_check):
 # ----------------------------------------------- розташування описів і конверсій
 
 
-def _vector_funnel_codes(label_x: list[float], conv: list[tuple[float, float]]) -> list[str]:
+def _vector_funnel_codes(
+    label_x: list[float], conv: list[tuple[float, float]], rates: tuple[str, ...] = ("50%", "20%", "50%")
+) -> list[str]:
     """Піраміда з 4 блоків (висота 30 pt); label_x — де починається опис кожного блоку,
     conv — (x правого краю, y центру) кожної конверсії."""
     from app.visual.pdf import PdfPage
@@ -164,7 +166,7 @@ def _vector_funnel_codes(label_x: list[float], conv: list[tuple[float, float]]) 
     blocks = [Box(100 + 15 * i, 100 + 30 * i, 300 - 15 * i, 130 + 30 * i) for i in range(4)]
     words = [Token(v, b.cx - 15, b.cy - 6, b.cx + 15, b.cy + 6) for v, b in zip(("1000", "500", "100", "50"), blocks)]
     words += [Token(f"Крок{i}", x, b.cy - 6, x + 40, b.cy + 6) for i, (x, b) in enumerate(zip(label_x, blocks), 1)]
-    words += [Token(t, x - 30, y - 6, x, y + 6) for t, (x, y) in zip(("50%", "20%", "50%"), conv)]
+    words += [Token(t, x - 30, y - 6, x, y + 6) for t, (x, y) in zip(rates, conv)]
     doc = ParsedDocument(paragraphs=[], shape_count=4)
     issues = IssueCollector()
     check_funnels(doc, None, [PdfPage(1, 595, 842, blocks, words)], make_settings(), issues)
@@ -179,6 +181,13 @@ def test_aligned_vector_funnel_passes():
     labels = [310, 295, 280, 265]  # рівно 10 pt від кожного блоку
     conv = [(100 + 15 * (i - 1) - 8, y) for i, y in enumerate(_boundaries(), 1)]
     assert _vector_funnel_codes(labels, conv) == []
+
+
+def test_conversion_error_up_to_five_percent_is_accepted():
+    labels = [310, 295, 280, 265]
+    conv = [(90, 130), (105, 160), (120, 190)]
+    assert "wrong_funnel_conversion" not in _vector_funnel_codes(labels, conv, ("52%", "20%", "50%"))  # правильно 50%
+    assert "wrong_funnel_conversion" in _vector_funnel_codes(labels, conv, ("53%", "20%", "50%"))
 
 
 def test_labels_scattered_or_far_from_blocks():

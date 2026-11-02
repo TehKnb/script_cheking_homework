@@ -109,6 +109,36 @@ def test_body_text_crossing_funnel_is_not_a_label():
     assert analysis.extra_labels == []
 
 
+def test_conversion_tolerance_share_is_relative():
+    check = _conversion("21%", 1000, 200)  # правильно 20%: 21% — рівно 5%
+    assert is_conversion_correct(check, tolerance_share=0.05)
+    assert not is_conversion_correct(_conversion("22%", 1000, 200), tolerance_share=0.05)
+    assert is_conversion_correct(_conversion("95%", 100, 100), tolerance_share=0.05)
+    # Мала конверсія: 5% від 8% — це лише 0,4 п.п., тож «9%» не проходить
+    assert not is_conversion_correct(_conversion("9,0%", 1000, 80), tolerance_share=0.05)
+
+
+def test_conversion_is_read_enlarged_because_percent_sign_looks_like_nine():
+    import numpy as np
+
+    from app.visual.raster import _read_conversion
+
+    crop = np.full((60, 120, 3), 255, dtype=np.uint8)
+    full_size = crop.shape[1] + 30  # _without_frames додає рамку 15 px
+
+    class Reader:
+        def __init__(self, enlarged: str, original: str) -> None:
+            self.answers = {True: enlarged, False: original}
+
+        def read_region(self, image, single_line, digits=False):
+            return self.answers[image.shape[1] > full_size]
+
+    assert _read_conversion(Reader("40,0%", "40,09"), crop) == "40,0%"
+    assert _read_conversion(Reader("40,09", "40,0%"), crop) == "40,0%"
+    assert _read_conversion(Reader("40", ""), crop) == "40"
+    assert _read_conversion(Reader("", "40"), crop) == "40"
+
+
 def _first_step(conversion: str):
     blocks = _pyramid(3)
     tokens = [tok(v, 200, b.cy, w=40, h=12) for v, b in zip(("90 456", "217 947", "2 527"), blocks)]

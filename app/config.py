@@ -68,6 +68,10 @@ class Settings:
     # Роздільник тисяч: у відмовах його вимагають для Гіпотез/Стратегічних питань і для великих сум.
     # У прийнятих ДЗ трапляються «1543», «20592» — тому за замовчуванням ДЗ не перевіряються
     number_format_min_value: int = field(default_factory=lambda: int(_env_float("NUMBER_FORMAT_MIN_VALUE", 10000)))
+    # Суми з валютою («9800$») перевіряємо вже від цього значення
+    number_format_money_min_value: int = field(
+        default_factory=lambda: int(_env_float("NUMBER_FORMAT_MONEY_MIN_VALUE", 1000))
+    )
     number_format_work_types: tuple[str, ...] = field(
         default_factory=lambda: tuple(
             t.strip() for t in os.getenv("NUMBER_FORMAT_WORK_TYPES", "hypothesis,strategic_question").split(",")
@@ -92,6 +96,10 @@ class Settings:
     hunspell_dictionaries: str = field(default_factory=lambda: os.getenv("HUNSPELL_DICTIONARIES", "uk_UA,ru_RU,en_US"))
     # Частка слів з помилками, після якої робота повертається
     spelling_error_share: float = field(default_factory=lambda: _env_float("SPELLING_ERROR_SHARE", 0.07))
+    # Гіпотези й Стратегічні питання короткі: у прийнятих до 2,2%, тоді як у прийнятих ДЗ трапляється й 5%
+    spelling_error_share_short_works: float = field(
+        default_factory=lambda: _env_float("SPELLING_ERROR_SHARE_SHORT_WORKS", 0.04)
+    )
 
     # --- Рендер у PDF (воронки SmartArt/фігурами, читабельність) ---
     render_pdf: bool = field(default_factory=lambda: _env_bool("RENDER_PDF", True))
@@ -113,6 +121,10 @@ class Settings:
     # («20%» для 19,6%, «28%» для 28,6%, «7,6%» для 7,64%), див. is_conversion_correct
     funnel_conversion_tolerance_pp: float = field(
         default_factory=lambda: _env_float("FUNNEL_CONVERSION_TOLERANCE_PP", 0.0)
+    )
+    # Допустима похибка конверсії як частка від правильного значення: 0,05 — для 20% приймаємо 19–21%
+    funnel_conversion_tolerance_share: float = field(
+        default_factory=lambda: _env_float("FUNNEL_CONVERSION_TOLERANCE_SHARE", 0.05)
     )
 
 

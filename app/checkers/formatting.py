@@ -38,7 +38,7 @@ def check_formatting(
     if first_line is not None:
         _check_package_color(first, first_line, issues)
     if work_type.value in settings.number_format_work_types:
-        _check_numbers(doc, settings.number_format_min_value, issues)
+        _check_numbers(doc, settings.number_format_min_value, settings.number_format_money_min_value, issues)
     if doc.landscape_sections:
         issues.add("landscape_orientation")
 
@@ -128,31 +128,49 @@ def _check_bold(
     header: HeaderParseResult | None,
     issues: IssueCollector,
 ) -> None:
-    allowed: list[tuple[int, int]] = []
+    # Пакет з потоком описуємо окремо: людині важливо бачити, що пакет знайдено, а не так виділено
+    business: list[tuple[int, int]] = []
+    package: list[tuple[int, int]] = []
     if header is not None:
-        allowed = [(f.start, f.end) for f in (header.business, header.package) if f is not None]
-        if header.flow_number is not None and header.package is not None:
-            allowed.append((header.flow_number.start, header.flow_number.end))
+        if header.business is not None:
+            business.append((header.business.start, header.business.end))
+        if header.package is not None:
+            package.append((header.package.start, header.package.end))
+            if header.flow_number is not None:
+                package.append((header.flow_number.start, header.flow_number.end))
+    allowed = business + package
 
     def must_be_bold(pos: int) -> bool:
         return any(start <= pos < end for start, end in allowed)
 
+    def in_package(pos: int) -> bool:
+        return any(start <= pos < end for start, end in package)
+
     extra_bold: list[str] = []
     missing_bold: list[str] = []
+    package_bold: set[bool] = set()
     for run in first.runs:
         extra = missing = False
         for offset, ch in enumerate(run.text):
             if ch in _SEPARATOR_CHARS or not ch.isalnum():
                 continue
-            expected = must_be_bold(run.start + offset)
+            pos = run.start + offset
+            if in_package(pos):
+                package_bold.add(run.bold)
+                continue
+            expected = must_be_bold(pos)
             extra |= run.bold and not expected
             missing |= not run.bold and expected
         if extra:
             extra_bold.append(_fragment(run, bold_expected=False, allowed=allowed))
         if missing:
-            missing_bold.append(_fragment(run, bold_expected=True, allowed=allowed))
+            missing_bold.append(_fragment(run, bold_expected=True, allowed=business))
 
     details: list[str] = []
+    if False in package_bold:
+        shown = " ".join(first.text[start:end].strip(" –—-") for start, end in dict.fromkeys(package))
+        how = "виділено жирним не повністю" if True in package_bold else "не виділено жирним"
+        details.append(f"пакет «{shown}» {how}")
     if missing_bold:
         details.append(f"не виділено жирним: {quote_list(missing_bold)}")
     if extra_bold:
@@ -225,9 +243,9 @@ def _check_package_color(first: ParagraphInfo, header: HeaderParseResult, issues
 # ----------------------------------------------------------------- numbers
 
 
-def _check_numbers(doc: ParsedDocument, min_value: int, issues: IssueCollector) -> None:
+def _check_numbers(doc: ParsedDocument, min_value: int, money_min_value: int, issues: IssueCollector) -> None:
     bad: list[str] = []
     for paragraph in doc.body_paragraphs:
-        bad.extend(find_badly_formatted_numbers(paragraph.text, min_value))
+        bad.extend(find_badly_formatted_numbers(paragraph.text, min_value, money_min_value))
     if bad:
         issues.add("wrong_number_format", f"Знайдено: {quote_list(bad)}")

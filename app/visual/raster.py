@@ -137,6 +137,20 @@ def _read_value(reader: RegionReader, crop: np.ndarray) -> str | None:
     return None
 
 
+def _read_conversion(reader: RegionReader, crop: np.ndarray) -> str:
+    """Дрібний «%» Tesseract читає як цифру: «40,0%» → «40,09», «49,4%» → «49,49,». Збільшений удвічі фрагмент
+    читається правильно, тож починаємо з нього; без «%» пробуємо ще оригінальний розмір."""
+    clean = _without_frames(crop)
+    enlarged = cv2.resize(clean, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+    readings = []
+    for image in (enlarged, clean):
+        text = reader.read_region(image, single_line=False, digits=True).replace(" ", "")
+        if "%" in text:
+            return text
+        readings.append(text)
+    return readings[0] or readings[1]
+
+
 def read_funnel_regions(img: np.ndarray, chain: list[Box], reader: RegionReader) -> list[Token]:
     """Токени воронки, прочитані по фрагментах: значення в центрі кожного блоку, опис праворуч у смузі
     блоку, конверсія ліворуч на межі сусідніх блоків. Координати — межі фрагмента."""
@@ -180,8 +194,7 @@ def _read_block(img: np.ndarray, chain: list[Box], idx: int, reader: RegionReade
         left_edge = min(x1, int(nxt.x1)) - 2
         if left_edge > 10:
             top, bottom = max(0, boundary - bh // 2), min(h, boundary + bh // 2)
-            text = reader.read_region(_without_frames(img[top:bottom, 0:left_edge]), single_line=False, digits=True)
-            text = text.replace(" ", "")
+            text = _read_conversion(reader, img[top:bottom, 0:left_edge])
             if _PERCENT_TEXT_RE.search(text):
                 # Ліворуч між блоками — конверсія; якщо OCR загубив «%», повертаємо його.
                 # Для першого переходу число без % може бути частотою показів — лишаємо як є.

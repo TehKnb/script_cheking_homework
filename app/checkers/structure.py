@@ -48,6 +48,9 @@ _OPTIONS_RE = re.compile(
 _MIN_HYPOTHESIS_WORDS = 30
 # Мінус: «-2100$» (дефіс впритул до числа) або слово «мінус». «т.Б - 17 000$» — це тире, не мінус
 _MINUS_RE = re.compile(r"(?:мінус|minus)\s*[-–]?\s*$|(?:^|[\s(:–—])-$", re.IGNORECASE)
+# «Планова т.Б -15 000$»: єдиний дефіс одразу після назви показника — роздільник. Справжній мінус стоїть уже після
+# роздільника: «т.А - -2 100$», «т.А: -7 000$»
+_LABEL_HYPHEN_RE = re.compile(r"^\s*-(?=\s*\d)")
 _MONEY_SIGN_AFTER_RE = re.compile(r"^\s?(?:\$|usd|дол|грн|₴|uah|€|євро|у\.\s?о)", re.IGNORECASE)
 
 
@@ -140,10 +143,10 @@ def extract_metrics(lines: list[ParagraphInfo]) -> Metrics:
                 open_heading = None
             continue
         # Значення шукаємо після назви показника: «6. Точка Б …» — це номер пункту, а не сума
-        value_text = text[match.end() :]
+        value_text = _LABEL_HYPHEN_RE.sub(" ", text[match.end() :])
         if kind == "price":
             # «Ціна питання: (15 000 − 10 000) × 12 = 60 000 $» — беремо результат після «=»
-            value_text = text.rsplit("=", 1)[1] if "=" in text else text
+            value_text = text.rsplit("=", 1)[1] if "=" in text else value_text
             if _money_value(value_text) is None and idx + 1 < len(texts):
                 value_text = texts[idx + 1]
         metrics.lines.append(

@@ -171,7 +171,7 @@ class DocumentChecker:
             check_dz(doc, dz_number, funnels.has_funnel or has_graphics or issues.has("funnel_not_visual"), links, issues)
 
         # 7. Орфографія
-        check_spelling(doc, settings, issues)
+        check_spelling(doc, settings, issues, work_type)
 
         # 8. Формат файлу (вимога ранньої версії ТЗ, за замовчуванням вимкнена)
         if settings.docx_requires_funnel and kind == FileKind.DOCX and not funnels.has_funnel:

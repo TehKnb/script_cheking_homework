@@ -66,8 +66,9 @@ def parse_number(text: str) -> float | None:
     return numbers[0].value if numbers else None
 
 
-def find_badly_formatted_numbers(text: str, min_value: int = 1000) -> list[str]:
-    """Числа ≥ 1000, записані без роздільника розрядів («10000» замість «10 000»).
+def find_badly_formatted_numbers(text: str, min_value: int = 1000, money_min_value: int | None = None) -> list[str]:
+    """Числа ≥ min_value, записані без роздільника розрядів («10000» замість «10 000»); суми з валютою
+    («9800$», «$9800») — уже від money_min_value, якщо його задано.
 
     Роздільником вважаються пробіл, кома або крапка (1 000 / 1,000 / 1.000).
     Не вважаються помилкою: роки (1950–2035, якщо після них не стоїть валюта чи %), номери («№1234»),
@@ -77,8 +78,12 @@ def find_badly_formatted_numbers(text: str, min_value: int = 1000) -> list[str]:
     bad: list[str] = []
     for m in NUMBER_RE.finditer(masked):
         int_raw = m.group("int")
-        if not int_raw.isdigit() or len(int_raw) < 4 or int(int_raw) < min_value:
+        if not int_raw.isdigit() or len(int_raw) < 4:
             continue  # уже з роздільником або замале
+        if int(int_raw) < min_value:
+            has_currency = _CURRENCY_AFTER_RE.match(masked[m.end("int") :]) or masked[: m.start()].endswith("$")
+            if money_min_value is None or int(int_raw) < money_min_value or not has_currency:
+                continue
         if int_raw.startswith("0") or len(int_raw) >= 9:
             continue
         before = masked[max(0, m.start() - 2) : m.start()]
@@ -94,6 +99,7 @@ def find_badly_formatted_numbers(text: str, min_value: int = 1000) -> list[str]:
 
 
 _MONEY_AFTER_RE = re.compile(r"^\s?(?:\$|%|грн|₴|usd|uah|€|дол)", re.IGNORECASE)
+_CURRENCY_AFTER_RE = re.compile(r"^\s?(?:\$|грн|₴|usd|uah|€|дол)", re.IGNORECASE)
 
 
 def _mask_urls(text: str) -> str:
