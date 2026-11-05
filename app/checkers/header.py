@@ -204,9 +204,9 @@ class HeaderParseResult:
         return [p for p in (_CITY_PREFIX_RE.sub("", p.strip()) for p in parts) if p]
 
 
-# «ВІП67 ДЗ №6» — пакет і тип роботи в одній частині без роздільника
+# «ВІП67 ДЗ №6», «Річна 66_ДЗ№7» — пакет і тип роботи в одній частині без роздільника
 _TRAILING_MARKER_RE = re.compile(
-    r"^(?P<head>.*\S)\s+(?P<marker>" + _DZ_WORD + r"\s*(?:№|#|N)?\s*\d+|гіпотез\w*|стратегічн\w*\s+(?:питанн|запитанн)\w*)$",
+    r"^(?P<head>.*[^\s_])[\s_]+(?P<marker>" + _DZ_WORD + r"\s*(?:№|#|N)?\s*\d+|гіпотез\w*|стратегічн\w*\s+(?:питанн|запитанн)\w*)$",
     re.IGNORECASE,
 )
 

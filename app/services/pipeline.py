@@ -34,7 +34,7 @@ from app.ocr.engine import OcrEngine, get_ocr_engine
 from app.services import converter
 from app.services.converter import ConversionError, ConverterUnavailableError, FileKind, detect_kind
 from app.services.document_loader import DocumentReadError, ParsedDocument, load_docx
-from app.utils.text import normalize
+from app.utils.text import normalize, telegram_safe
 from app.visual.pdf import PdfPage, read_pdf
 
 logger = logging.getLogger(__name__)
@@ -267,12 +267,13 @@ def _extracted(file_header: HeaderParseResult, text_header: HeaderParseResult | 
             return text_header.value(attr)
         return file_header.value(attr)
 
+    # Ці поля n8n теж вставляє в повідомлення Telegram: «Іваненко Іван_Петренко» зламав би розмітку
     return ExtractedData(
-        student_name=pick("student_name"),
-        business=pick("business"),
-        city=pick("city"),
-        package=pick("package"),
-        flow_number=pick("flow_number"),
+        student_name=telegram_safe(pick("student_name")),
+        business=telegram_safe(pick("business")),
+        city=telegram_safe(pick("city")),
+        package=telegram_safe(pick("package")),
+        flow_number=telegram_safe(pick("flow_number")),
     )
 
 

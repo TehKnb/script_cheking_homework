@@ -365,6 +365,14 @@ def test_strategic_question_with_directions_and_unchecked_price(run_check):
     assert result.extracted_data.package == "ПРОРИВ" and result.extracted_data.flow_number == "63"
 
 
+def test_extracted_data_has_no_telegram_markup(run_check):
+    header = [Part("Іваненко Іван_Петренко Олена - "), Part("Кафе & бар", bold=True), Part(" - Київ – ")]
+    header += [Part("Річна 66", bold=True, color=RED), Part("_ДЗ№7")]
+    data = run_check(DocSpec(header, plain("Текст роботи.")), DZ_FILE).extracted_data
+    assert not set("_*`[]<>&") & set(data.student_name + data.business + data.city + data.package)
+    assert data.package == "Річна" and data.flow_number == "66"
+
+
 def test_issue_texts_have_no_telegram_markup(run_check):
     body = plain("Текст роботи.")
     body.append([Part("______________", size=14)])  # лінія для підпису — не текст

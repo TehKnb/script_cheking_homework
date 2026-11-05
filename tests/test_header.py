@@ -194,6 +194,14 @@ def test_dz_marker_with_dot_or_comma(marker):
     assert parsed.marker_type == WorkType.DZ and parsed.dz_number == "6"
 
 
+def test_package_and_dz_joined_by_underscore():
+    text = "Іваненко Іван_Петренко Олена - Генератори - Київ – Річна 66_ДЗ№7"
+    for parsed in (parse_header(text), parse_header(text, allow_underscore=True)):
+        assert parsed.package_info.display == "Річна66" and parsed.city.value == "Київ"
+        assert parsed.marker_type == WorkType.DZ and parsed.dz_number == "7"
+    assert _codes(text) == set()
+
+
 def test_package_glued_to_city_by_hyphen():
     parsed = parse_header("Іваненко Іван- Товари для дому – Чернівці-ВІП-67 - ДЗ №6")
     assert parsed.city.value == "Чернівці" and parsed.package_info.display == "ВІП67"
