@@ -1,7 +1,7 @@
 """Перевірка посилань у роботі.
 
 Посилання дозволені (Google Drive, Instagram, рекламні креативи, лендинги), але:
-* мають бути клікабельними гіперпосиланнями (а не просто текстом «https://…»);
+* мають бути клікабельними гіперпосиланнями; просто текст («https://…», «opt.site.com.ua») — на ручну перевірку;
 * мають відкриватися без запиту доступу (Google Drive — «доступ за посиланням»);
 * мають вести на опублікований лендинг, а не на його редактор (типова помилка в ДЗ№7).
 """
@@ -18,7 +18,7 @@ from urllib.parse import unquote, urlsplit
 from app.config import Settings
 from app.issues import IssueCollector
 from app.services.document_loader import ParsedDocument
-from app.utils.text import quote_list
+from app.utils.text import URL_RE, quote_list
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +62,22 @@ def _key(url: str) -> str:
 def collect_links(doc: ParsedDocument) -> tuple[list[str], list[str]]:
     """(гіперпосилання, URL у тексті з явним http/www)."""
     hyperlinks = [h for h in doc.hyperlinks if h and not h.lower().startswith(("mailto:", "#", "tel:"))]
-    text_urls = [m.group(0).rstrip(".,;:)»") for m in _EXPLICIT_URL_RE.finditer(doc.full_text)]
+    text = doc.full_text
+    text_urls = [m.group(0).rstrip(".,;:)»") for m in _EXPLICIT_URL_RE.finditer(text)]
+    # Адреса без https і www: «opt.example.com.ua». Пошту («info@site.com») посиланням не вважаємо
+    for m in URL_RE.finditer(text):
+        url = m.group(0).rstrip(".,;:)»")
+        if not _EXPLICIT_URL_RE.match(url) and text[m.start() - 1 : m.start()] != "@" and not _inside(url, text_urls):
+            text_urls.append(url)
     return hyperlinks, text_urls
+
+
+def _inside(url: str, urls: list[str]) -> bool:
+    return any(url.lower() in known.lower() for known in urls)
+
+
+def _with_scheme(url: str) -> str:
+    return url if re.match(r"^https?://", url, re.I) else "https://" + url
 
 
 def check_links(doc: ParsedDocument, settings: Settings, issues: IssueCollector) -> list[str]:
@@ -75,11 +89,11 @@ def check_links(doc: ParsedDocument, settings: Settings, issues: IssueCollector)
         issues.add("link_not_clickable", f"Посилання без гіперпосилання: {quote_list(not_clickable)}")
 
     all_links = list(dict.fromkeys(hyperlinks + text_urls))
-    editors = [u for u in all_links if any(p.search(u) for p in _EDITOR_PATTERNS)]
+    editors = [u for u in all_links if any(p.search(_with_scheme(u)) for p in _EDITOR_PATTERNS)]
     if editors:
         issues.add("landing_editor_link", f"Знайдено: {quote_list(editors)}")
 
-    private = [u for u in all_links if any(p.search(u) for p in _PRIVATE_PATTERNS)]
+    private = [u for u in all_links if any(p.search(_with_scheme(u)) for p in _PRIVATE_PATTERNS)]
     if settings.check_links:
         candidates = [u for u in all_links if u not in private and u not in editors and not _SKIP_HTTP_RE.search(u)]
         restricted, broken = _probe(candidates[: settings.max_links_to_check], settings.link_timeout_sec)

@@ -207,8 +207,8 @@ ISSUE_CATALOG: dict[str, IssueSpec] = {
     # --- Посилання ---
     "link_not_clickable": IssueSpec(
         Area.STRUCTURE,
-        Severity.REVISION,
-        "Посилання на інтернет-ресурс (що починається з http) має бути клікабельним гіперпосиланням",
+        Severity.MANUAL,
+        "Посилання у роботі не клікабельне — перевірте його та зробіть гіперпосиланням",
     ),
     "link_requires_access": IssueSpec(
         Area.STRUCTURE,

@@ -114,7 +114,7 @@ curl -X POST localhost:8000/check-document \
 ### Фінальний статус
 
 * є хоча б одна помилка «ручного» рівня (`unreadable_file`, `unclear_work_type`, `conversion_unavailable`,
-  `funnel_unreadable`, `funnel_check_unavailable`, `short_content`, `processing_error`, а також відсутні блоки шаблону
+  `funnel_unreadable`, `funnel_check_unavailable`, `short_content`, `processing_error`, `link_not_clickable`, а також відсутні блоки шаблону
   Гіпотези / Стратегічного питання: точки А і Б, ціна питання, клубні показники, опис гіпотези, питання автора,
   причина й варіанти рішення) → `manual_review` / `manual_review`;
 * інакше є будь-які issues → `needs_revision` / `return_to_student`;

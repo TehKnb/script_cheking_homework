@@ -178,6 +178,14 @@ def test_spelling_threshold_is_lower_for_hypothesis_and_question(monkeypatch):
         assert issues.has("too_many_spelling_errors") == expected, work_type
 
 
+def test_not_clickable_link_goes_to_manual_review(run_check):
+    file_name = "Іваненко Іван – Кав'ярня – Київ – ВІП67 – ДЗ №7.docx"
+    for line in ("Лендінг: opt.example.com.ua", "Лендінг: https://opt.example.com.ua/"):
+        result = run_check(DocSpec(header_parts(marker="ДЗ №7"), plain(line)), file_name)
+        assert codes(result) == {"link_not_clickable"}
+        assert result.status == Status.MANUAL_REVIEW and result.routing == Routing.MANUAL_REVIEW
+
+
 def test_prices_without_currency(run_check):
     body = plain(
         "Лід магніт товари:",
